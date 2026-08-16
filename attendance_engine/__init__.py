@@ -19,6 +19,28 @@ from .budget import (
     subject_stats,
 )
 from .coverage import CoverageReport, DateRange, analyse, find_gaps, merge_ranges
+from .plan import (
+    DayPlan,
+    DayVerdict,
+    PlannedLecture,
+    SimulationResult,
+    SubjectPlan,
+    Wallet,
+    build_wallet,
+    day_plans,
+    simulate,
+)
+from .timetable import (
+    CONFIDENT_WEEKS,
+    CalendarRules,
+    LectureRow,
+    Occurrence,
+    Slot,
+    SlotCandidate,
+    count_by_subject,
+    expand,
+    infer_slots,
+)
 from .types import Counts, Dashboard, OverallStats, SubjectStats, Verdict
 
 __all__ = [
@@ -38,6 +60,26 @@ __all__ = [
     "analyse",
     "find_gaps",
     "merge_ranges",
+    # timetable (Phase 2)
+    "CONFIDENT_WEEKS",
+    "CalendarRules",
+    "LectureRow",
+    "Occurrence",
+    "Slot",
+    "SlotCandidate",
+    "count_by_subject",
+    "expand",
+    "infer_slots",
+    # planning (Phase 2)
+    "DayPlan",
+    "DayVerdict",
+    "PlannedLecture",
+    "SimulationResult",
+    "SubjectPlan",
+    "Wallet",
+    "build_wallet",
+    "day_plans",
+    "simulate",
     # types
     "Counts",
     "Dashboard",
