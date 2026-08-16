@@ -97,6 +97,29 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
+        # SQLite has no real ALTER TABLE, so Alembic's batch mode rebuilds the
+        # table: create a copy, move the rows, drop the original, rename. With
+        # foreign keys enforced (the app switches them on for multi-user), that
+        # DROP fails because other tables still reference the original. SQLite's
+        # own docs say to turn enforcement off around this procedure; it is
+        # restored when the app's connections are made.
+        # It must also be set outside any transaction — SQLite silently ignores
+        # this pragma once a BEGIN is pending, which is why it goes through the
+        # raw DBAPI connection after rolling back SQLAlchemy's implicit one.
+        is_sqlite = connection.dialect.name == "sqlite"
+        if is_sqlite:
+            raw = connection.connection
+            raw.rollback()
+            cursor = raw.cursor()
+            cursor.execute("PRAGMA foreign_keys=OFF")
+            cursor.execute("PRAGMA foreign_keys")
+            if cursor.fetchone()[0] != 0:
+                raise RuntimeError(
+                    "Could not disable foreign keys for the migration; a batch "
+                    "table rebuild would corrupt references."
+                )
+            cursor.close()
+
         context.configure(
             connection=connection,
             target_metadata=get_metadata(),
@@ -105,6 +128,20 @@ def run_migrations_online():
 
         with context.begin_transaction():
             context.run_migrations()
+
+        if is_sqlite:
+            # Surface any reference the migration broke, rather than leaving a
+            # quietly corrupt database behind.
+            raw = connection.connection
+            cursor = raw.cursor()
+            cursor.execute("PRAGMA foreign_key_check")
+            violations = cursor.fetchall()
+            cursor.close()
+            if violations:
+                raise RuntimeError(
+                    f"Migration left {len(violations)} foreign-key violations: "
+                    f"{violations[:5]}"
+                )
 
 
 if context.is_offline_mode():

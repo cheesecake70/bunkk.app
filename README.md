@@ -6,7 +6,7 @@ attendance PDF → know exactly what you can skip.
 Full docs live in the Claude project: `prd.md`, `implementation-plan.md`,
 `design.md`.
 
-## Status: Phase 3 ✅ — installable PWA with a morning notification
+## Status: multi-user ✅ — invite your friends onto your own server
 
 **Phase 0** — Flask scaffold (app factory, SQLAlchemy models, Flask-Login,
 `/healthz`); `report_parser/` parsing the portal's **detailed** report with
@@ -66,6 +66,27 @@ portal's own summary report for all 14 subjects.
   usable and Settings explains why notifications are unavailable, so dev and
   production don't diverge.
 
+**Multi-user** — the schema was multi-tenant from Phase 0, so this is about
+everything that only becomes a question with a second person:
+
+- **Invite-only registration** (the default). The first account on a fresh
+  server needs no code; everyone after arrives on a single-use invite from an
+  existing user, so leaving this on a public URL isn't the same as handing out
+  accounts. `BUNKMATE_REGISTRATION=open|invite|closed`.
+- **One student, one account.** A student number is claimed by the first
+  account to upload it and is unique thereafter, so uploading a friend's PDF
+  can no longer silently claim their identity and build a second, diverging
+  copy of their ledger.
+- **SQLite made fit for concurrency** (ADR-2): WAL so readers aren't blocked by
+  a writer, a busy timeout so contention waits instead of erroring, and
+  foreign keys enforced so a deleted account can't orphan a ledger.
+- **Login lockout** after repeated failures, with identical wording for unknown
+  emails and wrong passwords so the form can't enumerate who has an account.
+- **Take your data or leave**: full JSON export, and a password-confirmed
+  deletion that removes every row and the raw PDFs.
+- Production refuses to boot with the development `SECRET_KEY` — forgeable
+  sessions stop being a dev nicety once other people have accounts.
+
 Worst case drives every number on screen: a pending lecture counts as absent
 until the college says otherwise, so a green verdict is always safe. The
 day-strip property test asserts exactly that: a SKIP verdict can never break
@@ -91,6 +112,7 @@ app/                 Flask app (factory, models, auth, pages, JSON API, merge)
   services.py        the only place DB rows become engine inputs (user-scoped)
   planning.py        advanced mode: timetable, calendar, wallet, day strip
   push.py            Web Push delivery + the morning-brief fan-out
+  account.py         profile, invites, data export, account deletion
   cli.py             cron surface: flask push-briefs / flask vapid-keys
 report_parser/       pure PDF -> typed data (no Flask/DB imports)
 attendance_engine/   pure math: budgets, percentages, coverage
@@ -121,9 +143,28 @@ people whose chosen hour matches:
 On iPhone, notifications only work once the app is added to the home screen —
 iOS restricts push to installed web apps.
 
-## Next (Phase 4 — open it up)
+## Deploying for more than yourself
 
-Onboarding and profiles, more college adapters, invites, then evaluate paid
-features once retention is proven. The schema has been multi-tenant since
-Phase 0; the SQLite→Postgres switch is a connection string plus a migration
-run when one of ADR-2's triggers fires.
+```bash
+export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+export BUNKMATE_CONFIG=config.ProdConfig
+export BUNKMATE_REGISTRATION=invite      # the default
+flask db upgrade
+gunicorn "run:app"
+```
+
+Register the first account (no code needed), then hand out invites from
+**Account**. Back up `instance/bunkmate.db` *and* `instance/uploads/` together —
+the ledger is replayable from the snapshots only if the PDFs survive with it.
+
+Note for migrations: SQLite DDL isn't transactional, so a migration that fails
+part-way leaves the half-created table behind while the revision stays at the
+old version. Drop the stray table before re-running `flask db upgrade`.
+
+## Next (Phase 4 — the rest of opening up)
+
+More college adapters (the `College` entity and parser interface are the
+insurance), then evaluate paid features once retention is proven. Move to
+Postgres when one of ADR-2's triggers fires — sustained concurrent writes,
+more than one app server, or a public launch — which is a connection-string
+change plus a migration run.

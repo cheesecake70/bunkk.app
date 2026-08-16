@@ -35,6 +35,8 @@
        href="{{ url_for('core.history') }}">History</a>
     <a class="nav__link {% if request.endpoint == 'core.settings' %}is-active{% endif %}"
        href="{{ url_for('core.settings') }}">Settings</a>
+    <a class="nav__link {% if request.blueprint == 'account' %}is-active{% endif %}"
+       href="{{ url_for('account.index') }}">Account</a>
   </div>
   <span style="flex:1"></span>
   <form method="post" action="{{ url_for('auth.logout') }}" style="margin:0">

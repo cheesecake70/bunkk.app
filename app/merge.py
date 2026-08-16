@@ -230,8 +230,25 @@ def _check_identity(user: User, report: ParsedReport) -> None:
             f"This report belongs to student {header.student_number}, "
             f"but your account is {user.student_number}."
         )
-    # First upload adopts the identity printed on the report.
+
     if not user.student_number:
+        # A student number identifies one person, so it may back only one
+        # account. Without this check, uploading a friend's PDF would silently
+        # claim their identity and build a second, diverging copy of their
+        # ledger — and their next upload would be refused, not yours.
+        claimed = (
+            db.session.query(User)
+            .filter(User.student_number == header.student_number, User.id != user.id)
+            .first()
+        )
+        if claimed is not None:
+            raise MergeError(
+                f"Student {header.student_number} is already set up on another "
+                "Bunkmate account. If that's you, sign in as that account "
+                "instead of uploading the report here."
+            )
+
+        # First upload claims the identity printed on the report.
         user.student_number = header.student_number
         user.roll_no = header.roll_no
         if not user.name:

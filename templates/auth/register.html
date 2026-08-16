@@ -10,12 +10,41 @@
     </p>
   </div>
 
+  {% if bootstrap %}
+  <div class="banner banner--info" style="margin-bottom:var(--sp-5)">
+    <div class="banner__icon">👋</div>
+    <div class="banner__body">
+      <div class="banner__title">First account on this server</div>
+      <div class="banner__text">
+        You're setting it up, so no invite needed. Everyone after you will need
+        a code from you.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <form method="post" class="card">
     <h3>Create your account</h3>
+
+    {% if needs_invite %}
+    <div class="field">
+      <label for="invite">Invite code</label>
+      <input class="input input--mono {% if errors.invite %}is-error{% endif %}"
+             id="invite" name="invite" value="{{ invite }}" required
+             {% if not invite %}autofocus{% endif %}>
+      {% if errors.invite %}
+        <div class="field__error">{{ errors.invite }}</div>
+      {% else %}
+        <div class="field__hint">Ask whoever runs this Bunkmate for one.</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
     <div class="field">
       <label for="email">Email</label>
       <input class="input {% if errors.email %}is-error{% endif %}"
-             id="email" name="email" type="email" value="{{ email }}" required autofocus>
+             id="email" name="email" type="email" value="{{ email }}" required
+             {% if invite or not needs_invite %}autofocus{% endif %}>
       {% if errors.email %}<div class="field__error">{{ errors.email }}</div>{% endif %}
     </div>
     <div class="field">

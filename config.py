@@ -4,8 +4,18 @@ import os
 BASEDIR = os.path.abspath(os.path.dirname(__file__))
 
 
+#: Anyone who knows this can forge another user's session, so production
+#: refuses to start with it.
+DEV_SECRET_KEY = "dev-only-change-me"
+
+
 class BaseConfig:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-change-me")
+    SECRET_KEY = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
+
+    #: invite  — existing users hand out codes (the first account is free)
+    #: open    — anyone with the URL can sign up
+    #: closed  — no new accounts at all
+    REGISTRATION = os.environ.get("BUNKMATE_REGISTRATION", "invite")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_DIR = os.environ.get(
         "BUNKMATE_UPLOAD_DIR", os.path.join(BASEDIR, "instance", "uploads")
@@ -29,6 +39,8 @@ class DevConfig(BaseConfig):
 class TestConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"  # in-memory
+    # Tests create users freely; invite gating has its own dedicated tests.
+    REGISTRATION = "open"
 
 
 class ProdConfig(BaseConfig):
@@ -38,3 +50,7 @@ class ProdConfig(BaseConfig):
     )
     # Self-hosted deployment: gunicorn behind nginx/Caddy with HTTPS.
     SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    # The boot-time guard lives in create_app: Flask's from_object reads class
+    # attributes without instantiating, so a check in __init__ would never run.
