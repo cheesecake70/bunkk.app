@@ -141,6 +141,18 @@ class TestAdvancedDashboard:
         assert "Bunks left this semester" in html
         assert "day-strip" in html
 
+    def test_timetable_and_calendar_stay_reachable_after_setup(self, client):
+        """Both were only linked from 'not set up yet' branches, so once advanced
+        mode was configured they became unreachable — even though holidays get
+        announced mid-semester and timetables get reshuffled."""
+        confirm_timetable(client)
+        set_end(client)
+
+        for page in ("/", "/plan"):
+            html = client.get(page).get_data(as_text=True)
+            assert 'href="/calendar"' in html, f"no way to reach the calendar from {page}"
+            assert 'href="/timetable"' in html, f"no way to reach the timetable from {page}"
+
     def test_held_since_last_report_is_surfaced(self, client):
         """Report covers to 12.08; today is 16.08 — Thu 13.08 and Fri 14.08
         held lectures nobody has reported. They must be shown, not ignored."""

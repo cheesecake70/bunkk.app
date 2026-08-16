@@ -7,7 +7,10 @@
  * numbers are available" — and stale numbers are exactly what this app must
  * never show.
  */
-const VERSION = "bunkmate-v1";
+/* Bump on every change to the shell files below, or browsers keep serving the
+   old cached copies — a stale /offline showed an out-of-date nav for exactly
+   this reason. Activation deletes caches under any other name. */
+const VERSION = "bunkmate-v2";
 const SHELL = [
   "/offline",
   "/static/css/tokens.css",

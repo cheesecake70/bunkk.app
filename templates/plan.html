@@ -28,6 +28,13 @@
   </p>
 </div>
 
+{# The two things behind every projection stay reachable all semester: holidays
+   get announced late, and timetables get reshuffled. #}
+<div class="row" style="margin-bottom:var(--sp-5)">
+  <a class="btn btn--sm" href="{{ url_for('core.calendar') }}">🗓️ Holidays &amp; end date</a>
+  <a class="btn btn--sm" href="{{ url_for('core.timetable') }}">🕘 Weekly timetable</a>
+</div>
+
 <div class="grid-stats" style="margin-bottom:var(--sp-6)">
   <div class="stat stat--{{ wallet.overall_verdict.value }} stat--hero">
     <div class="stat__label">Bunks left</div>
