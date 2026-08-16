@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}History · Bunkmate{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="eyebrow">Every upload, kept forever</div>
+  <h1>History</h1>
+  <p class="page-head__sub">
+    Bunkmate never overwrites your attendance — each report is stored as it arrived,
+    so your ledger can always be rebuilt from scratch.
+  </p>
+</div>
+
+{% if coverage.covered %}
+<div class="card card--cyan" style="margin-bottom:var(--sp-5)">
+  <div class="eyebrow" style="margin-bottom:var(--sp-2)">Covered so far</div>
+  <div class="row">
+    {% for range in coverage.covered %}
+      <span class="badge badge--neutral">{{ range }}</span>
+    {% endfor %}
+    {% for gap in coverage.gaps %}
+      <span class="badge badge--warn">Missing {{ gap }}</span>
+    {% endfor %}
+    {% if coverage.trailing_gap %}
+      <span class="badge badge--pending">Not yet uploaded {{ coverage.trailing_gap }}</span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="timeline">
+  {% for snapshot in snapshots %}
+  <div class="timeline__item">
+    <div class="timeline__marker"></div>
+    <div class="card">
+      <div class="row--between" style="margin-bottom:var(--sp-2)">
+        <b class="mono">{{ snapshot.period_start|short_date }} → {{ snapshot.period_end|short_date }}</b>
+        {% if snapshot.status == 'merged' %}
+          <span class="badge badge--safe">Merged</span>
+        {% elif snapshot.status == 'staged' %}
+          <span class="badge badge--pending">Awaiting your answer</span>
+        {% else %}
+          <span class="badge badge--neutral">{{ snapshot.status|title }}</span>
+        {% endif %}
+      </div>
+      <div class="text-muted" style="font-size:var(--text-sm)">
+        <span class="mono">{{ snapshot.lecture_count }}</span> lectures ·
+        uploaded <span class="mono">{{ snapshot.uploaded_at.strftime('%d %b %Y, %H:%M') }}</span>
+        {% if snapshot.original_filename %} · {{ snapshot.original_filename }}{% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card empty">
+    <div class="empty__icon">📭</div>
+    <h2>No uploads yet</h2>
+    <a class="btn btn--primary" href="{{ url_for('core.upload') }}">Upload your first report</a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

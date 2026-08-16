@@ -84,6 +84,22 @@ class SubjectStats:
     def is_below(self) -> bool:
         return self.verdict is Verdict.DANGER
 
+    @property
+    def pending_dominated(self) -> bool:
+        """Below the limit in the worst case, but above it in the best case.
+
+        The shortfall is unresolved lectures, not missed ones. The verdict stays
+        DANGER — a pending lecture really can resolve to absent — but "attend 18
+        in a row" is not the useful sentence here; "9 lectures aren't marked
+        yet" is. The UI leans on this to keep its advice actionable.
+        """
+        return (
+            self.counts.unknown > 0
+            and self.worst_pct is not None
+            and self.best_pct is not None
+            and self.worst_pct < self.limit <= self.best_pct
+        )
+
 
 @dataclass(frozen=True)
 class OverallStats:
@@ -96,6 +112,16 @@ class OverallStats:
     can_miss_optimistic: int
     recover_needed: int
     verdict: Verdict
+
+    @property
+    def pending_dominated(self) -> bool:
+        """See `SubjectStats.pending_dominated` — same idea, whole-ledger scale."""
+        return (
+            self.counts.unknown > 0
+            and self.worst_pct is not None
+            and self.best_pct is not None
+            and self.worst_pct < self.limit <= self.best_pct
+        )
 
 
 @dataclass(frozen=True)

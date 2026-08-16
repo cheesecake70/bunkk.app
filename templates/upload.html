@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Upload · Bunkmate{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="eyebrow">Detailed report · PDF</div>
+  <h1>Upload</h1>
+  <p class="page-head__sub">
+    {% if coverage.suggested_export %}
+      Export <span class="mono">{{ coverage.suggested_export }}</span> from the portal —
+      always semester start → today, so every upload supersedes the last cleanly.
+    {% else %}
+      Export the <strong>detailed</strong> report from semester start to today.
+      Re-uploading the same range is always safe.
+    {% endif %}
+  </p>
+</div>
+
+<label class="dropzone" id="dropzone">
+  <input type="file" id="file" accept="application/pdf,.pdf">
+  <div class="dropzone__icon">📄</div>
+  <div class="dropzone__title">Drop your attendance PDF</div>
+  <div class="dropzone__hint" id="hint">detailed report · semester-start → today</div>
+</label>
+
+<div id="result" class="upload-result stack" aria-live="polite"></div>
+
+<div class="card card--cyan" style="margin-top:var(--sp-6)">
+  <h3 style="margin-bottom:var(--sp-2)">Where do I get this?</h3>
+  <p style="margin:0;font-size:var(--text-sm)">
+    College portal → <span class="mono">Attendance</span> →
+    <span class="mono">Detailed report</span> → pick the date range → export as PDF.
+    The <em>summary</em> report won't work: it has no per-lecture rows, so it can't
+    tell Bunkmate which lectures changed.
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% endblock %}

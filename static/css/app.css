@@ -1,0 +1,115 @@
+/* ==========================================================================
+   BUNKMATE APP LAYOUT — page scaffolding only.
+   Requires tokens.css + components.css. Every value here is a token: no new
+   colours, no new shadows. If a rule needs a hex, it belongs in tokens.css.
+   ========================================================================== */
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: var(--sp-6) var(--sp-5) var(--sp-8); }
+.wrap--narrow { max-width: 460px; }
+
+/* ---- Nav links ------------------------------------------------------------ */
+.nav__links { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.nav__link {
+  font-family: var(--font-label); font-weight: 700; font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  text-decoration: none; color: var(--ink);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--border); border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.nav__link:hover { background: var(--soft-yellow); }
+.nav__link.is-active { background: var(--ink); color: var(--ink-inverse); }
+
+/* ---- Page head ------------------------------------------------------------ */
+.page-head { margin-bottom: var(--sp-6); }
+.page-head h1 { margin-bottom: var(--sp-2); }
+.page-head__sub { color: var(--ink-muted); font-size: var(--text-lg); margin: 0; }
+
+/* ---- Generic layout helpers ----------------------------------------------- */
+.stack     { display: grid; gap: var(--sp-4); }
+.stack--lg { display: grid; gap: var(--sp-5); }
+.row       { display: flex; gap: var(--sp-4); flex-wrap: wrap; align-items: center; }
+.row--between { display: flex; gap: var(--sp-4); flex-wrap: wrap;
+  align-items: center; justify-content: space-between; }
+.grid-stats {
+  display: grid; gap: var(--sp-4);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.section-title {
+  font-family: var(--font-display); font-size: var(--text-2xl);
+  margin: var(--sp-7) 0 var(--sp-4);
+}
+.section-title:first-child { margin-top: 0; }
+
+/* ---- Subject table extras -------------------------------------------------- */
+/* components.css clips the wrap with `overflow: hidden` to keep the rounded
+   border crisp. On a narrow phone that silently amputates the Status column
+   instead of letting it scroll, so allow horizontal scrolling inside the wrap
+   itself — the page body still never scrolls sideways. */
+.table-wrap { overflow-x: auto; overflow-y: hidden; }
+.subjects a.subj-link { text-decoration: none; display: block; }
+.subjects .meter { min-width: 110px; }
+.cell-right { text-align: right; }
+.cell-num   { font-family: var(--font-mono); font-weight: 700; text-align: right; }
+
+/* ---- Lecture drill-down list ----------------------------------------------- */
+.lecture-list { display: grid; }
+.lecture {
+  display: grid; grid-template-columns: 1fr auto auto; gap: var(--sp-4);
+  align-items: center;
+  padding: var(--sp-3) 0; border-bottom: 1.5px dashed var(--ink);
+}
+.lecture:last-child { border-bottom: none; }
+.lecture__when { font-family: var(--font-mono); font-size: var(--text-sm); }
+.lecture__trail {
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-muted);
+}
+.lecture.is-vanished { opacity: 0.6; }
+
+/* ---- Snapshot timeline ------------------------------------------------------ */
+.timeline { display: grid; gap: var(--sp-4); }
+.timeline__item { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-4); }
+.timeline__marker {
+  width: 14px; height: 14px; margin-top: 6px;
+  background: var(--acc-purple); border: var(--border); border-radius: 50%;
+}
+
+/* ---- Empty state ------------------------------------------------------------ */
+.empty { text-align: center; padding: var(--sp-7) var(--sp-5); }
+.empty__icon { font-size: 56px; line-height: 1; }
+.empty h2 { font-family: var(--font-display); margin: var(--sp-4) 0 var(--sp-2); }
+
+/* ---- Upload flow ------------------------------------------------------------ */
+/* The dropzone is a <label> so the whole block opens the file picker and stays
+   keyboard-reachable. Labels are inline by default, which would break the
+   border into fragments — force the block box the design system assumes. */
+.dropzone { display: block; }
+.dropzone input[type="file"] { display: none; }
+.upload-result { margin-top: var(--sp-5); }
+.proposal {
+  border: var(--border); border-radius: var(--radius-sm);
+  padding: var(--sp-4); background: var(--soft-purple); margin-bottom: var(--sp-3);
+}
+.proposal__q { font-weight: 700; margin-bottom: var(--sp-2); }
+
+/* ---- Settings --------------------------------------------------------------- */
+.limit-row {
+  display: grid; grid-template-columns: 1fr 120px; gap: var(--sp-4);
+  align-items: center; padding: var(--sp-3) 0;
+  border-bottom: 1.5px dashed var(--ink);
+}
+.limit-row:last-child { border-bottom: none; }
+.limit-row .input { margin: 0; }
+
+/* ---- Phone ------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .wrap { padding: var(--sp-5) var(--sp-4) var(--sp-7); }
+  .nav { flex-wrap: wrap; gap: var(--sp-2); }
+  .nav__links { order: 3; width: 100%; }
+  .page-head h1 { font-size: var(--text-2xl); }
+  .lecture { grid-template-columns: 1fr auto; }
+  .lecture__trail { grid-column: 1 / -1; }
+  .limit-row { grid-template-columns: 1fr 96px; }
+  /* The subject table drops its least-load-bearing columns before it scrolls. */
+  .subjects .col-optional { display: none; }
+}

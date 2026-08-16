@@ -14,7 +14,13 @@ login_manager = LoginManager()
 
 
 def create_app(config_object: str | None = None) -> Flask:
-    app = Flask(__name__, instance_relative_config=True)
+    # Templates and static assets live at the repo root, beside the app package.
+    app = Flask(
+        __name__,
+        instance_relative_config=True,
+        template_folder="../templates",
+        static_folder="../static",
+    )
 
     app.config.from_object(config_object or os.environ.get(
         "BUNKMATE_CONFIG", "config.DevConfig"
@@ -32,7 +38,15 @@ def create_app(config_object: str | None = None) -> Flask:
     def load_user(user_id: str):
         return db.session.get(models.User, int(user_id))
 
+    from . import filters
+    filters.register(app)
+
+    from .api import bp as api_bp
+    from .auth import bp as auth_bp
     from .routes import bp as core_bp
+
     app.register_blueprint(core_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(api_bp)
 
     return app

@@ -194,6 +194,51 @@ class TestDashboard:
         assert all(s.can_miss_optimistic >= s.can_miss for s in d.subjects)
 
 
+class TestPendingDominated:
+    """Below the line only because lectures are unmarked — a different story
+    from being below it because they were missed."""
+
+    def _one(self, present, absent, unknown, limit=70):
+        rows = [dict(id=1, code="X", canonical_name="X", lecture_type="Theory",
+                     limit=limit, counts=Counts(present, absent, unknown))]
+        return build_dashboard(rows, overall_limit=limit).subjects[0]
+
+    def test_unmarked_lectures_are_the_cause(self):
+        s = self._one(present=0, absent=0, unknown=8)     # worst 0%, best 100%
+        assert s.verdict is Verdict.DANGER                # still never says "safe"
+        assert s.pending_dominated
+
+    def test_genuinely_missed_lectures_are_not_pending_dominated(self):
+        s = self._one(present=2, absent=8, unknown=0)     # 20%, nothing pending
+        assert s.verdict is Verdict.DANGER
+        assert not s.pending_dominated
+
+    def test_hopeless_even_if_every_pending_resolves_present(self):
+        """5 present, 10 absent, 1 pending: best case 6/16 = 37.5%, still below."""
+        s = self._one(present=5, absent=10, unknown=1)
+        assert not s.pending_dominated
+
+    def test_a_safe_subject_is_never_pending_dominated(self):
+        s = self._one(present=9, absent=0, unknown=1)     # worst 90%
+        assert s.verdict is Verdict.SAFE
+        assert not s.pending_dominated
+
+    def test_exactly_reaching_the_limit_in_the_best_case_counts(self):
+        """7 present, 0 absent, 3 pending: worst 70%… so it isn't below at all."""
+        s = self._one(present=6, absent=1, unknown=3)     # worst 60%, best 90%
+        assert s.pending_dominated
+
+    @given(counts_st, limit_st)
+    def test_pending_dominated_never_contradicts_the_verdict(self, c, limit):
+        rows = [dict(id=1, code="X", canonical_name="X", lecture_type="Theory",
+                     limit=limit, counts=c)]
+        s = build_dashboard(rows, overall_limit=limit).subjects[0]
+        # It is a *reason* for DANGER, never a softening of anything else.
+        if s.pending_dominated:
+            assert s.verdict is Verdict.DANGER
+            assert s.can_miss == 0
+
+
 class TestCoverage:
     def test_touching_ranges_merge(self):
         merged = merge_ranges([

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ subject.code }} · Bunkmate{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="eyebrow">{{ subject.lecture_type }} · limit {{ stats.limit if stats else '—' }}%</div>
+  <h1>{{ subject.code }}</h1>
+  <p class="page-head__sub">{{ subject.canonical_name }}</p>
+</div>
+
+{% if stats %}
+<div class="grid-stats" style="margin-bottom:var(--sp-5)">
+  <div class="stat stat--{{ stats.verdict.value }}">
+    <div class="stat__label">Worst case</div>
+    <div class="stat__value num">{{ stats.worst_pct|percent(0) }}</div>
+    <div class="stat__meta">pending counted absent</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Official</div>
+    <div class="stat__value num">{{ stats.official_pct|percent(0) }}</div>
+    <div class="stat__meta">what the portal shows</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Best case</div>
+    <div class="stat__value num">{{ stats.best_pct|percent(0) }}</div>
+    <div class="stat__meta">if every pending resolves present</div>
+  </div>
+  <div class="stat stat--{{ 'danger' if stats.verdict.value == 'danger' else ('warn' if stats.can_miss_effective == 0 else 'safe') }}">
+    {% if stats.pending_dominated %}
+      <div class="stat__label">Unmarked</div>
+      <div class="stat__value num">{{ stats.counts.unknown }}</div>
+      <div class="stat__meta">resolve these before judging this subject</div>
+    {% elif stats.verdict.value == 'danger' %}
+      <div class="stat__label">Attend next</div>
+      <div class="stat__value num">{{ stats.recover_needed }}</div>
+      <div class="stat__meta">in a row to clear {{ stats.limit }}%</div>
+    {% else %}
+      <div class="stat__label">Can miss</div>
+      <div class="stat__value num">{{ stats.can_miss_effective }}</div>
+      <div class="stat__meta">
+        {% if stats.can_miss_effective < stats.can_miss %}
+          capped by the overall {{ overall.limit }}% rule
+        {% else %}
+          {{ stats.can_miss_optimistic }} if pending resolve present
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:var(--sp-6)">
+  <div class="row--between" style="margin-bottom:var(--sp-3)">
+    <b class="mono">{{ stats.counts.present }} present · {{ stats.counts.absent }} absent · {{ stats.counts.unknown }} pending</b>
+    <span class="mono text-muted">{{ stats.counts.total }} lectures held</span>
+  </div>
+  <div class="meter {% if stats.verdict.value == 'warn' %}meter--warn{% elif stats.verdict.value == 'danger' %}meter--danger{% endif %}">
+    <div class="meter__fill" style="width:{{ stats.worst_pct|percent_width }}%"></div>
+    <div class="meter__limit" style="left:{{ stats.limit }}%" data-label="{{ stats.limit }}%"></div>
+  </div>
+</div>
+{% endif %}
+
+<h2 class="section-title">Every lecture</h2>
+<div class="card">
+  <div class="lecture-list">
+    {% for lecture in lectures %}
+    <div class="lecture {% if lecture.is_vanished %}is-vanished{% endif %}">
+      <span class="lecture__when">
+        {{ lecture.on_date|long_date }} · {{ lecture.start_time|clock }}–{{ lecture.end_time|clock }}
+      </span>
+      <span class="badge badge--{{ lecture.status|status_tone }}">{{ lecture.status|status_word }}</span>
+      {% if lecture.is_vanished %}
+        <span class="badge badge--neutral">Vanished</span>
+      {% elif history.get(lecture.id) %}
+        <span class="lecture__trail">
+          {% for change in history[lecture.id] %}{{ change.from_status }}→{{ change.to_status }}{% if not loop.last %} · {% endif %}{% endfor %}
+        </span>
+      {% else %}
+        <span></span>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-muted" style="margin:0">No lectures recorded for this subject yet.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="row" style="margin-top:var(--sp-5)">
+  <a class="btn btn--ghost" href="{{ url_for('core.dashboard') }}">← Back to today</a>
+</div>
+{% endblock %}

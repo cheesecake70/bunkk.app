@@ -4,40 +4,65 @@ Attendance calculator & manager for university students. Upload your college
 attendance PDF → know exactly what you can skip.
 
 Full docs live in the Claude project: `prd.md`, `implementation-plan.md`,
-`onboarding-flow.md`.
+`design.md`.
 
-## Status: Phase 0 ✅
+## Status: Phase 1 ✅ — basic mode is usable daily
 
-- Flask scaffold (app factory, SQLAlchemy models, Flask-Login wiring, /healthz)
-- `report_parser/` — pure package parsing the portal's **detailed** attendance
-  report with pdfplumber: header, per-lecture rows (P/A/AG/L/NU), course-name
-  normalisation ("Computer NetworksT C2" → Computer Networks · Theory), short
-  display codes (CN, DBMS Lab…), format detection (summary PDFs politely
-  redirected), consistency validation
-- Golden-file tests against three real portal PDFs, including a full
-  cross-check: detailed-report July aggregates == portal's July summary for
-  all 14 subjects
+**Phase 0** — Flask scaffold (app factory, SQLAlchemy models, Flask-Login,
+`/healthz`); `report_parser/` parsing the portal's **detailed** report with
+pdfplumber (header, per-lecture rows P/A/AG/L/NU, course-name normalisation,
+short display codes, format detection, validation); golden-file tests against
+three real portal PDFs, including the full July cross-check against the
+portal's own summary report for all 14 subjects.
+
+**Phase 1** — upload → parse → merge → dashboard:
+
+- `attendance_engine/` — pure budget math. Official / worst-case / best-case
+  percentages, safe-to-miss counts, recovery counts, coverage gaps and
+  staleness. Every threshold is exact integer arithmetic (`100·P ≥ limit·T`);
+  property tests prove the budget is exactly maximal and the recovery count
+  exactly minimal, so rounding can never flip a verdict.
+- `app/merge.py` — snapshot → ledger upsert. Status changes are logged, new
+  lectures inserted, identical files short-circuit to "nothing new", rows that
+  vanish from the portal are flagged rather than deleted, and an unfamiliar
+  course name is asked about once and remembered forever.
+- Pages — dashboard (bunk budget, per-subject table with meters, gap /
+  staleness / pending banners), per-lecture drill-down with change history,
+  upload with live diff, snapshot history, settings with per-subject overrides.
+- Auth from day 1; every row keyed by `user_id`, with tests that one account
+  can never read another's ledger.
+
+Worst case drives every number on screen: a pending lecture counts as absent
+until the college says otherwise, so a green verdict is always safe.
 
 ## Dev setup
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m pytest tests/ -v     # should be all green
-python run.py                  # http://127.0.0.1:5000/healthz
+flask db upgrade                  # create/upgrade instance/bunkmate.db
+python -m pytest tests/ -q        # should be all green
+python run.py                     # http://127.0.0.1:5000
 ```
+
+Register at `/register`, then drop a detailed-report PDF on `/upload`.
 
 ## Layout
 
 ```
-app/                 Flask app (factory, models, routes)
+app/                 Flask app (factory, models, auth, pages, JSON API, merge)
+  merge.py           snapshot -> LectureLedger fold, diffs, gap flags
+  services.py        the only place DB rows become engine inputs (user-scoped)
 report_parser/       pure PDF -> typed data (no Flask/DB imports)
-attendance_engine/   pure math: budgets & verdicts (Phase 1+)
+attendance_engine/   pure math: budgets, percentages, coverage
+templates/           Jinja pages
+static/css/          tokens.css + components.css (design system) + app.css
 tests/golden/        real portal PDFs used as parser ground truth
-config.py            Dev/Test/Prod configs (SQLite; Postgres-ready)
+migrations/          Alembic (SQLite now, Postgres later via ADR-2)
 ```
 
-## Next (Phase 1)
+## Next (Phase 2 — advanced mode)
 
-Merge engine (per-lecture upsert ledger + diffs + coverage tracking), upload
-endpoint, subject-code onboarding, basic dashboard.
+Timetable inference + confirmation, semester calendar (end date, holidays),
+exact remaining-class projection, bunk-budget wallet, GO/SKIP day strip,
+half-day options, plan-ahead simulator.
