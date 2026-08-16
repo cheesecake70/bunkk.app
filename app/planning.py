@@ -366,6 +366,122 @@ def day_strip(user, today: date | None = None, days: int = STRIP_DAYS,
     return day_plans(_to_planned(occurrences, codes), wallet, horizon)
 
 
+# ---------------------------------------------------------------------------
+# The nudge that carries its own incentive (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class UnlockEstimate:
+    """What a fresh upload would buy you.
+
+    Every unresolved lecture — pending in the ledger, or held since the last
+    report — is counted as missed. If they all turn out to be attended, this is
+    how much budget was being withheld. It is deliberately the *best* case: the
+    honest way to say it is "up to N", and it is never used to authorise a bunk.
+    """
+
+    current_budget: int
+    optimistic_budget: int
+    unresolved: int
+
+    @property
+    def gain(self) -> int:
+        return max(0, self.optimistic_budget - self.current_budget)
+
+    @property
+    def worth_nudging(self) -> bool:
+        return self.unresolved > 0 and self.gain > 0
+
+
+def unlock_estimate(user, today: date | None = None) -> UnlockEstimate:
+    from attendance_engine import Counts
+
+    wallet = wallet_for(user, today)
+    settings = settings_for(user)
+
+    optimistic_rows = [
+        {
+            "id": s.subject_id, "code": s.code, "canonical_name": s.canonical_name,
+            "lecture_type": s.lecture_type, "limit": s.limit,
+            # Everything unresolved lands as "present" in the best case.
+            "counts": Counts(
+                present=s.counts.present + s.counts.unknown + s.unreported,
+                absent=s.counts.absent,
+                unknown=0,
+            ),
+            "unreported": 0,
+            "remaining": s.remaining,
+            "planned_absences": s.planned_absences,
+        }
+        for s in wallet.subjects
+    ]
+    optimistic = build_wallet(optimistic_rows, overall_limit=settings.overall_limit)
+
+    return UnlockEstimate(
+        current_budget=wallet.overall_budget,
+        optimistic_budget=optimistic.overall_budget,
+        unresolved=wallet.overall_counts.unknown + wallet.overall_unreported,
+    )
+
+
+@dataclass(frozen=True)
+class Brief:
+    """One glanceable sentence — the notification, and the PWA's answer."""
+
+    title: str
+    body: str
+    url: str = "/"
+    tag: str = "bunkmate-morning"
+
+
+def morning_brief(user, today: date | None = None) -> Brief | None:
+    """Tomorrow's verdict in a sentence, or None when there's nothing to say."""
+    today = today or date.today()
+    tomorrow = today + timedelta(days=1)
+    unlock = unlock_estimate(user, today)
+    nudge = (
+        f" Upload a fresh report to unlock up to {unlock.gain} more."
+        if unlock.worth_nudging else ""
+    )
+
+    ready, _ = advanced_ready(user)
+    if not ready:
+        # Basic mode still has something useful to say every morning.
+        coverage = coverage_for(user, today=today)
+        if coverage.pending_count:
+            return Brief(
+                title=f"{coverage.pending_count} lectures still unmarked",
+                body=(f"Your real budget is probably bigger than it looks."
+                      f"{nudge or ' Upload a fresh report to find out.'}"),
+                url="/upload",
+            )
+        if coverage.is_stale:
+            return Brief(
+                title="Your attendance is going stale",
+                body=f"No report since {coverage.latest_covered:%d %b}. "
+                     f"Export {coverage.suggested_export} to catch up.",
+                url="/upload",
+            )
+        return None
+
+    strip = day_strip(user, today=today, days=2)
+    plan = next((d for d in strip if d.on_date == tomorrow), None)
+    if plan is None:
+        return None
+
+    titles = {
+        "skip": "Tomorrow: skippable",
+        "partial": "Tomorrow: half day",
+        "go": "Tomorrow: you need to go",
+        "off": "Tomorrow: no classes",
+    }
+    return Brief(
+        title=titles.get(plan.verdict.value, "Tomorrow"),
+        body=plan.reason + nudge,
+    )
+
+
 def advanced_ready(user) -> tuple[bool, str | None]:
     """Is advanced mode usable, and if not, what's the single next step?"""
     if active_semester(user) is None:

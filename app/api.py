@@ -9,10 +9,10 @@ from flask_login import current_user, login_required
 
 from report_parser import ReportParseError
 
-from . import db, planning
+from . import db, planning, push
 from .merge import MergeError, MergeResult, ingest, resolve_proposals
-from .models import PlannedAbsence, Subject
-from .services import coverage_for, dashboard_for
+from .models import PlannedAbsence, PushSubscription, Subject
+from .services import coverage_for, dashboard_for, settings_for
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -189,6 +189,89 @@ def simulate_plan():
         except (KeyError, TypeError, ValueError):
             return jsonify(error="Malformed absence in the plan."), 400
     return jsonify(_wallet_payload(extras))
+
+
+@bp.get("/push/key")
+@login_required
+def push_key():
+    return jsonify(configured=push.is_configured(), public_key=push.public_key())
+
+
+@bp.post("/push/subscribe")
+@login_required
+def push_subscribe():
+    payload = request.get_json(silent=True) or {}
+    endpoint = payload.get("endpoint")
+    keys = payload.get("keys") or {}
+    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+        return jsonify(error="Incomplete subscription."), 400
+
+    existing = (
+        db.session.query(PushSubscription).filter_by(endpoint=endpoint).one_or_none()
+    )
+    if existing is not None:
+        # Endpoints are unique per browser and get reused when someone signs in
+        # as a different account on the same device. Reassign the row in place —
+        # deleting and re-inserting trips the unique constraint on autoflush,
+        # and leaving it would push one student's verdicts to another's phone.
+        existing.user_id = current_user.id
+        existing.p256dh = keys["p256dh"]
+        existing.auth = keys["auth"]
+        existing.user_agent = (payload.get("user_agent") or "")[:255]
+    else:
+        db.session.add(PushSubscription(
+            user_id=current_user.id,
+            endpoint=endpoint,
+            p256dh=keys["p256dh"],
+            auth=keys["auth"],
+            user_agent=(payload.get("user_agent") or "")[:255],
+        ))
+
+    settings = settings_for(current_user)
+    settings.notify_enabled = True
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@bp.post("/push/unsubscribe")
+@login_required
+def push_unsubscribe():
+    endpoint = (request.get_json(silent=True) or {}).get("endpoint")
+    if endpoint:
+        row = (
+            db.session.query(PushSubscription)
+            .filter_by(endpoint=endpoint, user_id=current_user.id)
+            .one_or_none()
+        )
+        if row is not None:
+            db.session.delete(row)
+
+    remaining = (
+        db.session.query(PushSubscription).filter_by(user_id=current_user.id).count()
+    )
+    if remaining == 0:
+        settings_for(current_user).notify_enabled = False
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@bp.post("/push/test")
+@login_required
+def push_test():
+    if not push.is_configured():
+        return jsonify(error="Notifications aren't configured on this server."), 400
+
+    brief = planning.morning_brief(current_user)
+    payload = push.brief_payload(brief) if brief else {
+        "title": "Bunkmate works",
+        "body": "Nothing to report right now — you're all caught up.",
+        "url": "/",
+        "tag": "bunkmate-test",
+    }
+    delivered = push.send_to_user(current_user, payload)
+    if not delivered:
+        return jsonify(error="No device accepted the notification."), 502
+    return jsonify(ok=True, delivered=delivered)
 
 
 def _wallet_payload(extras=None) -> dict:

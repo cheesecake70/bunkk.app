@@ -79,6 +79,56 @@
   </div>
 </form>
 
+<div class="card card--cyan" style="margin-top:var(--sp-5)">
+  <h3>Morning notification</h3>
+  <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
+    One notification a day with tomorrow's verdict — so most mornings you don't
+    have to open anything at all.
+  </p>
+
+  <div class="row" style="margin-bottom:var(--sp-3)">
+    <label class="toggle">
+      <input type="checkbox" id="push-toggle"
+             data-configured="{{ '1' if push_configured else '0' }}"
+             data-key="{{ push_public_key or '' }}"
+             {% if settings.notify_enabled and push_devices %}checked{% endif %}>
+      <span class="toggle__track"></span>
+    </label>
+    <span id="push-status" class="text-muted" style="font-size:var(--text-sm)">
+      {% if settings.notify_enabled and push_devices %}
+        On — {{ push_devices }} {{ 'device' if push_devices == 1 else 'devices' }} registered.
+      {% else %}
+        Off.
+      {% endif %}
+    </span>
+    <button class="btn btn--sm" id="push-test" type="button"
+            {% if not (settings.notify_enabled and push_devices) %}hidden{% endif %}>
+      Send a test
+    </button>
+  </div>
+
+  <form method="post" class="row" style="align-items:flex-end;gap:var(--sp-3)">
+    <div class="field" style="margin:0;max-width:160px">
+      <label for="notify_hour">Send at</label>
+      <input class="input input--mono {% if errors.notify_hour %}is-error{% endif %}"
+             id="notify_hour" name="notify_hour" inputmode="numeric"
+             value="{{ settings.notify_hour }}">
+      {% if errors.notify_hour %}
+        <div class="field__error">{{ errors.notify_hour }}</div>
+      {% else %}
+        <div class="field__hint">Hour of the day, 0–23.</div>
+      {% endif %}
+    </div>
+    <input type="hidden" name="only_notify_hour" value="1">
+    <button class="btn btn--sm" type="submit">Save time</button>
+  </form>
+
+  <p class="text-muted" style="font-size:var(--text-sm);margin-bottom:0">
+    On iPhone, add Bunkmate to your home screen first — iOS only allows
+    notifications for installed web apps.
+  </p>
+</div>
+
 <div class="card card--purple" style="margin-top:var(--sp-6)">
   <h3 style="margin-bottom:var(--sp-2)">Your account</h3>
   <p style="margin:0;font-size:var(--text-sm)">

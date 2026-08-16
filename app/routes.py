@@ -1,16 +1,28 @@
 """Server-rendered pages (ADR-1: Jinja + plain CSS, no build step)."""
 from __future__ import annotations
 
+import os
 from calendar import monthrange
 from datetime import date, time, timedelta
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-from . import db, planning
-from .models import PlannedAbsence, Subject
+from . import db, planning, push
+from .models import PlannedAbsence, PushSubscription, Subject
 from .services import (
     changes_for_lectures,
     coverage_for,
@@ -27,7 +39,32 @@ bp = Blueprint("core", __name__)
 
 @bp.get("/healthz")
 def healthz():
-    return jsonify(status="ok", app="bunkmate", phase=1)
+    return jsonify(status="ok", app="bunkmate", phase=3)
+
+
+@bp.get("/sw.js")
+def service_worker():
+    """Served from the root so the worker's scope covers every page.
+
+    From /static/ it could only control /static/, which would make navigation
+    handling and push impossible.
+    """
+    response = send_from_directory(
+        os.path.join(current_app.root_path, "..", "static", "js"), "sw.js"
+    )
+    response.headers["Content-Type"] = "application/javascript"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
+
+@bp.get("/offline")
+def offline():
+    """Shown by the service worker when a navigation can't reach the server.
+
+    Deliberately carries no attendance data: stale numbers are worse than none.
+    """
+    return render_template("offline.html")
 
 
 @bp.get("/")
@@ -241,22 +278,49 @@ def settings():
         .all()
     )
 
+    def page(errors, status=200):
+        return render_template(
+            "settings.html", settings=settings, subjects=subjects,
+            errors=errors, subject_limit=subject_limit,
+            push_configured=push.is_configured(),
+            push_public_key=push.public_key(),
+            push_devices=db.session.query(PushSubscription)
+                .filter_by(user_id=current_user.id).count(),
+        ), status
+
     if request.method == "POST":
+        # The notification card posts on its own so saving a time doesn't
+        # require re-submitting every limit on the page.
+        if request.form.get("only_notify_hour"):
+            errors = _apply_notify_hour(settings, request.form)
+            if errors:
+                db.session.rollback()
+                return page(errors, 400)
+            db.session.commit()
+            flash("Notification time saved.")
+            return redirect(url_for("core.settings"))
+
         errors = _apply_settings(settings, subjects, request.form)
         if errors:
             db.session.rollback()
-            return render_template(
-                "settings.html", settings=settings, subjects=subjects,
-                errors=errors, subject_limit=subject_limit,
-            ), 400
+            return page(errors, 400)
         db.session.commit()
         flash("Settings saved.")
         return redirect(url_for("core.settings"))
 
-    return render_template(
-        "settings.html", settings=settings, subjects=subjects,
-        errors={}, subject_limit=subject_limit,
-    )
+    return page({})
+
+
+def _apply_notify_hour(settings, form) -> dict[str, str]:
+    raw = (form.get("notify_hour") or "").strip()
+    try:
+        hour = int(raw)
+    except ValueError:
+        return {"notify_hour": "Enter an hour between 0 and 23."}
+    if not 0 <= hour <= 23:
+        return {"notify_hour": "Enter an hour between 0 and 23."}
+    settings.notify_hour = hour
+    return {}
 
 
 def _apply_settings(settings, subjects, form) -> dict[str, str]:

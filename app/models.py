@@ -51,6 +51,29 @@ class Settings(db.Model):
     subject_limit = db.Column(db.Integer, nullable=False, default=70)
     staleness_days = db.Column(db.Integer, nullable=False, default=7)
     advanced_mode = db.Column(db.Boolean, nullable=False, default=False)
+    #: Phase 3 — the morning nudge. Hour is local to the server (single-tenant
+    #: for now; a per-user timezone joins this when the app opens up).
+    notify_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    notify_hour = db.Column(db.Integer, nullable=False, default=7)
+
+
+class PushSubscription(db.Model):
+    """One browser's Web Push endpoint. A user may install on several devices."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    endpoint = db.Column(db.String(500), nullable=False, unique=True)
+    p256dh = db.Column(db.String(200), nullable=False)
+    auth = db.Column(db.String(100), nullable=False)
+    user_agent = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    last_sent_at = db.Column(db.DateTime)
+
+    def as_info(self) -> dict:
+        return {
+            "endpoint": self.endpoint,
+            "keys": {"p256dh": self.p256dh, "auth": self.auth},
+        }
 
 
 class Semester(db.Model):

@@ -38,8 +38,9 @@ def create_app(config_object: str | None = None) -> Flask:
     def load_user(user_id: str):
         return db.session.get(models.User, int(user_id))
 
-    from . import filters
+    from . import cli, filters
     filters.register(app)
+    cli.register(app)
 
     from .api import bp as api_bp
     from .auth import bp as auth_bp
