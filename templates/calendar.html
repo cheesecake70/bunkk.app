@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Calendar · Bunkmate{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="eyebrow">Holidays &amp; swap-days</div>
+  <h1>Semester calendar</h1>
+  <p class="page-head__sub">
+    Tap any future day to cycle it: normal → holiday → swap-day. Bunkmate only ever
+    looks forwards, so you never have to fill in the past.
+  </p>
+</div>
+
+<div class="card {% if not semester_end %}card--yellow{% endif %}" style="margin-bottom:var(--sp-5)">
+  <form method="post" action="{{ url_for('core.set_end_date') }}">
+    <div class="field" style="margin-bottom:var(--sp-3)">
+      <label for="end_date">Semester end date</label>
+      <input class="input input--mono" id="end_date" name="end_date" type="date"
+             value="{{ semester_end.isoformat() if semester_end else '' }}" required>
+      <div class="field__hint">
+        The one date Bunkmate ever asks you for — everything else is inferred.
+      </div>
+    </div>
+    <button class="btn btn--primary" type="submit">
+      {{ 'Update' if semester_end else 'Save' }} end date
+    </button>
+  </form>
+</div>
+
+{% if not has_timetable %}
+<div class="banner" style="margin-bottom:var(--sp-5)">
+  <div class="banner__icon">⚠️</div>
+  <div class="banner__body">
+    <div class="banner__title">No timetable confirmed yet</div>
+    <div class="banner__text">Holidays only change the maths once Bunkmate knows your weekly grid.</div>
+  </div>
+  <a class="btn btn--sm" href="{{ url_for('core.timetable') }}">Confirm it</a>
+</div>
+{% endif %}
+
+<div class="row" style="margin-bottom:var(--sp-4)">
+  <span class="badge badge--neutral">Normal</span>
+  <span class="badge badge--danger">Holiday · no classes</span>
+  <span class="badge badge--pending">Swap · another day's timetable</span>
+</div>
+
+{% for month in months %}
+<div class="card" style="margin-bottom:var(--sp-4)">
+  <h3>{{ month.label }}</h3>
+  <div class="cal">
+    {% for label in weekdays %}<div class="cal__dow">{{ label }}</div>{% endfor %}
+    {% for week in month.weeks %}
+      {% for day in week %}
+        {% if not day %}
+          <div class="cal__blank"></div>
+        {% elif day < today or (semester_end and day > semester_end) %}
+          <div class="cal__day is-out"><span class="mono">{{ day.day }}</span></div>
+        {% else %}
+          {% set holiday = holidays.get(day) %}
+          <button type="button"
+                  class="cal__day {% if holiday and holiday.kind == 'holiday' %}is-holiday{% elif holiday %}is-swap{% endif %}"
+                  data-date="{{ day.isoformat() }}"
+                  data-kind="{{ holiday.kind if holiday else '' }}"
+                  data-swap="{{ holiday.swap_weekday if holiday and holiday.swap_weekday is not none else '' }}">
+            <span class="mono">{{ day.day }}</span>
+            {% if holiday and holiday.kind == 'swap' and holiday.swap_weekday is not none %}
+              <span class="cal__tag">{{ weekdays[holiday.swap_weekday] }}</span>
+            {% elif holiday %}
+              <span class="cal__tag">off</span>
+            {% endif %}
+          </button>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+
+<div class="row">
+  <a class="btn btn--primary" href="{{ url_for('core.dashboard') }}">Done</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.BUNKMATE_WEEKDAYS = {{ weekdays|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
+{% endblock %}

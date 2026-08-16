@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Plan · Bunkmate{% endblock %}
+
+{% block content %}
+{% if not ready %}
+  <div class="card empty">
+    <div class="empty__icon">🧭</div>
+    <h2>Advanced mode isn't set up yet</h2>
+    <p class="text-muted" style="max-width:420px;margin:0 auto var(--sp-5)">
+      Planning needs to know how many lectures are actually left this semester.
+    </p>
+    {% if next_step == 'upload' %}
+      <a class="btn btn--primary btn--lg" href="{{ url_for('core.upload') }}">Upload a report</a>
+    {% elif next_step == 'timetable' %}
+      <a class="btn btn--primary btn--lg" href="{{ url_for('core.timetable') }}">Confirm your timetable</a>
+    {% else %}
+      <a class="btn btn--primary btn--lg" href="{{ url_for('core.calendar') }}">Set your semester end date</a>
+    {% endif %}
+  </div>
+{% else %}
+
+<div class="page-head">
+  <div class="eyebrow">Spend your bunks on purpose</div>
+  <h1>Plan</h1>
+  <p class="page-head__sub">
+    Commit to days you already know you'll miss — a fest, an interview, a wedding —
+    and every budget below recomputes around them.
+  </p>
+</div>
+
+<div class="grid-stats" style="margin-bottom:var(--sp-6)">
+  <div class="stat stat--{{ wallet.overall_verdict.value }} stat--hero">
+    <div class="stat__label">Bunks left</div>
+    <div class="stat__value num">{{ wallet.overall_budget }}</div>
+    <div class="stat__meta">after {{ wallet.overall_planned }} planned · limit {{ wallet.overall_limit }}%</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Lectures left</div>
+    <div class="stat__value num">{{ wallet.overall_remaining }}</div>
+    <div class="stat__meta">until the semester ends</div>
+  </div>
+  {% if wallet.tightest %}
+  <div class="stat stat--{{ wallet.tightest.verdict.value }}">
+    <div class="stat__label">Breaks first</div>
+    <div class="stat__value num">{{ wallet.tightest.code }}</div>
+    <div class="stat__meta">{{ wallet.tightest.budget }} left of its own</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if not result.is_safe %}
+<div class="banner banner--danger" style="margin-bottom:var(--sp-5)">
+  <div class="banner__icon">⚠️</div>
+  <div class="banner__body">
+    <div class="banner__title">This plan breaks your limits</div>
+    <div class="banner__text">
+      {% if result.breaks %}
+        {{ result.breaks|join(', ') }} would finish below
+        {{ 'its limit' if result.breaks|length == 1 else 'their limits' }}.
+      {% endif %}
+      {% if result.overall_breaks %} Your overall {{ wallet.overall_limit }}% would break too.{% endif %}
+      Drop a planned absence below.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<h2 class="section-title">Next two weeks</h2>
+<div class="day-strip" id="strip">
+  {% for day in strip %}
+  <div class="verdict verdict--{{ day.verdict.value }} {% if loop.first %}verdict--today{% endif %}"
+       title="{{ day.reason }}">
+    <div class="verdict__dow">{{ day.on_date.strftime('%a') }}</div>
+    <div class="verdict__date">{{ day.on_date.day }}</div>
+    <span class="verdict__tag">
+      {% if day.verdict.value == 'skip' %}Skip OK
+      {% elif day.verdict.value == 'partial' %}Partial
+      {% elif day.verdict.value == 'go' %}Must go
+      {% else %}No class{% endif %}
+    </span>
+    {% if day.lectures %}
+      <button class="btn btn--sm btn--ghost js-plan" data-date="{{ day.on_date.isoformat() }}"
+              style="margin-top:var(--sp-2);width:100%;justify-content:center">Miss it</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<p class="text-muted" style="font-size:var(--text-sm)">
+  Each day is judged on its own — "if this is the only thing I skip, am I still safe?".
+  Committing a day below re-checks everything together.
+</p>
+
+<h2 class="section-title">Committed absences</h2>
+<div class="card">
+  {% for absence in absences %}
+  <div class="lecture">
+    <span class="lecture__when">
+      {{ absence.on_date|full_date }} —
+      {% if absence.subject_id %}{{ subjects[absence.subject_id].code }}{% else %}whole day{% endif %}
+    </span>
+    <span></span>
+    <button class="btn btn--sm btn--danger js-drop" data-id="{{ absence.id }}">Remove</button>
+  </div>
+  {% else %}
+  <p class="text-muted" style="margin:0">
+    Nothing committed yet. Your whole budget is discretionary.
+  </p>
+  {% endfor %}
+</div>
+
+<h2 class="section-title">Where each subject lands</h2>
+<div class="table-wrap">
+  <table class="subjects">
+    <thead>
+      <tr>
+        <th>Subject</th>
+        <th class="cell-right">Left</th>
+        <th class="cell-right">Planned</th>
+        <th class="cell-right col-optional">Ends at</th>
+        <th class="cell-right">Bunks</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in wallet.subjects %}
+      <tr>
+        <td class="subj-code">{{ s.code }}</td>
+        <td class="cell-num">{{ s.remaining }}</td>
+        <td class="cell-num">{{ s.planned_absences }}</td>
+        <td class="cell-num col-optional">{{ s.projected_worst_pct|percent }}</td>
+        <td class="cell-num">{{ s.budget }}</td>
+        <td>
+          {% if s.verdict.value == 'safe' %}<span class="badge badge--safe">Safe</span>
+          {% elif s.verdict.value == 'warn' %}<span class="badge badge--warn">Tight</span>
+          {% elif s.verdict.value == 'danger' %}<span class="badge badge--danger">Can't recover</span>
+          {% else %}<span class="badge badge--neutral">No data</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/plan.js') }}"></script>
+{% endblock %}

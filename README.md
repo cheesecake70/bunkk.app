@@ -6,7 +6,7 @@ attendance PDF → know exactly what you can skip.
 Full docs live in the Claude project: `prd.md`, `implementation-plan.md`,
 `design.md`.
 
-## Status: Phase 1 ✅ — basic mode is usable daily
+## Status: Phase 2 ✅ — advanced mode: GO/SKIP verdicts &amp; the bunk wallet
 
 **Phase 0** — Flask scaffold (app factory, SQLAlchemy models, Flask-Login,
 `/healthz`); `report_parser/` parsing the portal's **detailed** report with
@@ -32,8 +32,27 @@ portal's own summary report for all 14 subjects.
 - Auth from day 1; every row keyed by `user_id`, with tests that one account
   can never read another's ledger.
 
+**Phase 2** — planning on exact numbers instead of estimates:
+
+- Timetable **inferred** from the ledger (recurring subject/weekday/time
+  patterns with a seen-in-N-weeks confidence signal) and confirmed with
+  checkboxes — never typed in. Saved as effective-dated versions.
+- Semester calendar: one date picker for the end date, then tap any future day
+  to cycle normal → holiday → swap-day. The past is read-only by design.
+- The **bunk wallet**: exact remaining lectures per subject, budgets that
+  planned absences spend first, and lectures held since the last upload counted
+  as unknowns (they can't be attended any more, so ignoring them would
+  overstate the budget).
+- The **GO/SKIP hero**: today's verdict in one word, a two-week day strip,
+  leave-early / arrive-late options on partial days, and "breaks first" naming
+  the tightest subject.
+- Plan-ahead simulator: commit future absences (whole day or one subject) and
+  watch every budget recompute; over-commitment names what breaks.
+
 Worst case drives every number on screen: a pending lecture counts as absent
-until the college says otherwise, so a green verdict is always safe.
+until the college says otherwise, so a green verdict is always safe. The
+day-strip property test asserts exactly that: a SKIP verdict can never break
+a limit.
 
 ## Dev setup
 
@@ -53,6 +72,7 @@ Register at `/register`, then drop a detailed-report PDF on `/upload`.
 app/                 Flask app (factory, models, auth, pages, JSON API, merge)
   merge.py           snapshot -> LectureLedger fold, diffs, gap flags
   services.py        the only place DB rows become engine inputs (user-scoped)
+  planning.py        advanced mode: timetable, calendar, wallet, day strip
 report_parser/       pure PDF -> typed data (no Flask/DB imports)
 attendance_engine/   pure math: budgets, percentages, coverage
 templates/           Jinja pages
@@ -61,8 +81,7 @@ tests/golden/        real portal PDFs used as parser ground truth
 migrations/          Alembic (SQLite now, Postgres later via ADR-2)
 ```
 
-## Next (Phase 2 — advanced mode)
+## Next (Phase 3 — daily habit layer)
 
-Timetable inference + confirmation, semester calendar (end date, holidays),
-exact remaining-class projection, bunk-budget wallet, GO/SKIP day strip,
-half-day options, plan-ahead simulator.
+Installable PWA, morning notification ("Tomorrow: skippable"), fully passive
+gap handling between uploads ("upload to unlock N more bunks").

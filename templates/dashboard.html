@@ -37,6 +37,87 @@
   </p>
 </div>
 
+{# ---- Advanced mode: the actual answer, before any tables ---------------- #}
+{% if advanced_ready and strip %}
+  {% set today_plan = strip[0] %}
+  <div class="hero-verdict hero-verdict--{{ today_plan.verdict.value }}">
+    <div class="hero-verdict__label">
+      {{ 'Today' if today_plan.on_date == windows.remaining_from else today_plan.on_date.strftime('%A %d %b') }}
+    </div>
+    <div class="hero-verdict__word">
+      {% if today_plan.verdict.value == 'skip' %}SKIP
+      {% elif today_plan.verdict.value == 'partial' %}HALF
+      {% elif today_plan.verdict.value == 'go' %}GO
+      {% else %}FREE{% endif %}
+    </div>
+    <div class="hero-verdict__reason">{{ today_plan.reason }}</div>
+  </div>
+
+  <div class="day-strip">
+    {% for day in strip %}
+    <div class="verdict verdict--{{ day.verdict.value }} {% if loop.first %}verdict--today{% endif %}"
+         title="{{ day.reason }}">
+      <div class="verdict__dow">{{ day.on_date.strftime('%a') }}</div>
+      <div class="verdict__date">{{ day.on_date.day }}</div>
+      <span class="verdict__tag">
+        {% if day.verdict.value == 'skip' %}Skip OK
+        {% elif day.verdict.value == 'partial' %}Partial
+        {% elif day.verdict.value == 'go' %}Must go
+        {% else %}No class{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid-stats" style="margin-bottom:var(--sp-6)">
+    <div class="stat stat--{{ wallet.overall_verdict.value }} stat--hero">
+      <div class="stat__label">Bunks left this semester</div>
+      <div class="stat__value num">{{ wallet.overall_budget }}</div>
+      <div class="stat__meta">{{ wallet.overall_remaining }} lectures still to come</div>
+    </div>
+    {% if wallet.tightest %}
+    <div class="stat stat--{{ wallet.tightest.verdict.value }}">
+      <div class="stat__label">Breaks first</div>
+      <div class="stat__value num">{{ wallet.tightest.code }}</div>
+      <div class="stat__meta">{{ wallet.tightest.budget }} of its own left</div>
+    </div>
+    {% endif %}
+    {% if wallet.overall_unreported %}
+    <div class="stat stat--warn">
+      <div class="stat__label">Held since your last report</div>
+      <div class="stat__value num">{{ wallet.overall_unreported }}</div>
+      <div class="stat__meta">counted as missed until you upload</div>
+    </div>
+    {% endif %}
+    <div class="stat">
+      <div class="stat__label">Planned absences</div>
+      <div class="stat__value num">{{ wallet.overall_planned }}</div>
+      <div class="stat__meta"><a href="{{ url_for('core.plan') }}">plan ahead →</a></div>
+    </div>
+  </div>
+{% elif has_data %}
+  <div class="card card--purple" style="margin-bottom:var(--sp-6)">
+    <div class="row--between">
+      <div>
+        <h3 style="margin-bottom:var(--sp-2)">Turn on GO / SKIP verdicts</h3>
+        <p class="text-muted" style="margin:0;font-size:var(--text-sm)">
+          {% if next_step == 'timetable' %}
+            Bunkmate can already see your weekly pattern in the reports — confirm it and
+            it can count exactly how many lectures are left.
+          {% else %}
+            One date left: when does the semester end?
+          {% endif %}
+        </p>
+      </div>
+      {% if next_step == 'timetable' %}
+        <a class="btn btn--accent" href="{{ url_for('core.timetable') }}">Confirm timetable</a>
+      {% else %}
+        <a class="btn btn--accent" href="{{ url_for('core.calendar') }}">Set end date</a>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
 {# ---- Things that need attention, worst first --------------------------- #}
 <div class="stack" style="margin-bottom:var(--sp-6)">
   {% if coverage.gaps %}

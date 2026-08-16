@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import date
 
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
 from report_parser import ReportParseError
 
+from . import db, planning
 from .merge import MergeError, MergeResult, ingest, resolve_proposals
+from .models import PlannedAbsence, Subject
 from .services import coverage_for, dashboard_for
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -100,6 +103,134 @@ def dashboard():
             if coverage.suggested_export else None,
         },
     )
+
+
+@bp.post("/calendar/day")
+@login_required
+def calendar_day():
+    """Tap a day: normal → holiday → swap → normal."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        on_date = date.fromisoformat(payload.get("date", ""))
+    except ValueError:
+        return jsonify(error="Bad date."), 400
+
+    if on_date < date.today():
+        return jsonify(error="Bunkmate only plans forwards — past days can't change."), 400
+
+    kind = payload.get("kind")
+    if kind not in (None, "holiday", "swap"):
+        return jsonify(error="Unknown day type."), 400
+
+    swap_weekday = payload.get("swap_weekday")
+    if kind == "swap":
+        if not isinstance(swap_weekday, int) or not 0 <= swap_weekday <= 6:
+            return jsonify(error="Pick which weekday's timetable runs."), 400
+
+    planning.set_day(current_user, on_date, kind,
+                     name=(payload.get("name") or None), swap_weekday=swap_weekday)
+    return jsonify(ok=True, date=on_date.isoformat(), kind=kind,
+                   swap_weekday=swap_weekday)
+
+
+@bp.post("/absences")
+@login_required
+def add_absence():
+    """Commit to missing a future date (whole day, or one subject on it)."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        on_date = date.fromisoformat(payload.get("date", ""))
+    except ValueError:
+        return jsonify(error="Bad date."), 400
+    if on_date < date.today():
+        return jsonify(error="That day has already happened."), 400
+
+    subject_id = payload.get("subject_id")
+    if subject_id is not None:
+        subject = db.session.get(Subject, subject_id)
+        if subject is None or subject.user_id != current_user.id:
+            return jsonify(error="Unknown subject."), 404
+
+    existing = (
+        db.session.query(PlannedAbsence)
+        .filter_by(user_id=current_user.id, on_date=on_date, subject_id=subject_id)
+        .one_or_none()
+    )
+    if existing is None:
+        db.session.add(PlannedAbsence(
+            user_id=current_user.id, on_date=on_date, subject_id=subject_id,
+            note=(payload.get("note") or None),
+        ))
+        db.session.commit()
+
+    return jsonify(_wallet_payload())
+
+
+@bp.delete("/absences/<int:absence_id>")
+@login_required
+def remove_absence(absence_id: int):
+    row = db.session.get(PlannedAbsence, absence_id)
+    if row is None or row.user_id != current_user.id:
+        return jsonify(error="Not found."), 404
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify(_wallet_payload())
+
+
+@bp.post("/simulate")
+@login_required
+def simulate_plan():
+    """Hypothetical absences — nothing is stored."""
+    payload = request.get_json(silent=True) or {}
+    extras = []
+    for item in payload.get("absences") or []:
+        try:
+            extras.append((date.fromisoformat(item["date"]), item.get("subject_id")))
+        except (KeyError, TypeError, ValueError):
+            return jsonify(error="Malformed absence in the plan."), 400
+    return jsonify(_wallet_payload(extras))
+
+
+def _wallet_payload(extras=None) -> dict:
+    result = planning.simulate_for(current_user, extras or [])
+    wallet = result.wallet
+    return {
+        "overall_budget": wallet.overall_budget,
+        "overall_limit": wallet.overall_limit,
+        "overall_remaining": wallet.overall_remaining,
+        "overall_planned": wallet.overall_planned,
+        "is_safe": result.is_safe,
+        "breaks": result.breaks,
+        "overall_breaks": result.overall_breaks,
+        "tightest": wallet.tightest.code if wallet.tightest else None,
+        "subjects": [
+            {
+                "id": s.subject_id,
+                "code": s.code,
+                "limit": s.limit,
+                "budget": s.budget,
+                "remaining": s.remaining,
+                "planned": s.planned_absences,
+                "unreported": s.unreported,
+                "projected_total": s.projected_total,
+                "projected_pct": _pct(s.projected_worst_pct),
+                "verdict": s.verdict.value,
+            }
+            for s in wallet.subjects
+        ],
+        "days": [
+            {
+                "date": d.on_date.isoformat(),
+                "verdict": d.verdict.value,
+                "reason": d.reason,
+                "lectures": [
+                    {"code": l.code, "start": l.start_time.isoformat()}
+                    for l in d.lectures
+                ],
+            }
+            for d in planning.day_strip(current_user, wallet=wallet)
+        ],
+    }
 
 
 def _pct(value) -> float | None:

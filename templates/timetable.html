@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Timetable · Bunkmate{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="eyebrow">Inferred from your reports</div>
+  <h1>Your week</h1>
+  <p class="page-head__sub">
+    Bunkmate worked this out from the lectures already in your ledger — nothing to type in.
+    Untick anything that isn't really weekly, then save.
+  </p>
+</div>
+
+{% if not candidates %}
+  <div class="card empty">
+    <div class="empty__icon">🗓️</div>
+    <h2>Not enough history yet</h2>
+    <p class="text-muted">Upload a report covering a few weeks and the pattern will show up here.</p>
+    <a class="btn btn--primary" href="{{ url_for('core.upload') }}">Upload a report</a>
+  </div>
+{% else %}
+<form method="post">
+  <div class="banner banner--info" style="margin-bottom:var(--sp-5)">
+    <div class="banner__icon">💡</div>
+    <div class="banner__body">
+      <div class="banner__title">Ticked = seen in {{ confident_weeks|default(2) }}+ different weeks</div>
+      <div class="banner__text">
+        Slots seen only once are listed unticked — they were probably one-off extra classes.
+      </div>
+    </div>
+  </div>
+
+  {% for day_index in range(7) %}
+    {% set day_slots = candidates | selectattr('slot.weekday', 'equalto', day_index) | list %}
+    {% if day_slots %}
+    <div class="card" style="margin-bottom:var(--sp-4)">
+      <div class="row--between" style="margin-bottom:var(--sp-3)">
+        <h3 style="margin:0">{{ weekdays[day_index] }}</h3>
+        <span class="badge badge--neutral">{{ day_slots|length }} slots</span>
+      </div>
+      {% for candidate in day_slots %}
+        {% set subject = subjects.get(candidate.slot.subject_id) %}
+        {% if subject %}
+        <label class="limit-row" style="grid-template-columns:auto 1fr auto;cursor:pointer">
+          <input type="checkbox" name="slot"
+                 value="{{ candidate.slot.subject_id }}|{{ candidate.slot.weekday }}|{{ candidate.slot.start_time }}|{{ candidate.slot.end_time }}"
+                 {% if (candidate.slot.subject_id, candidate.slot.weekday, candidate.slot.start_time) in active or (not has_existing and candidate.is_confident) %}checked{% endif %}
+                 style="width:22px;height:22px">
+          <span>
+            <b class="mono">{{ candidate.slot.start_time|clock }}–{{ candidate.slot.end_time|clock }}</b>
+            &nbsp;{{ subject.code }}
+            <span class="text-muted" style="font-size:var(--text-sm)">· {{ subject.lecture_type }}</span>
+          </span>
+          {% if candidate.is_confident %}
+            <span class="badge badge--safe">{{ candidate.weeks_seen }} weeks</span>
+          {% else %}
+            <span class="badge badge--warn">Seen once</span>
+          {% endif %}
+        </label>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <div class="row" style="margin-top:var(--sp-5)">
+    <button class="btn btn--primary btn--lg" type="submit">Save timetable</button>
+    <a class="btn btn--ghost" href="{{ url_for('core.dashboard') }}">Cancel</a>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

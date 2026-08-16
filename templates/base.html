@@ -21,6 +21,8 @@
        href="{{ url_for('core.dashboard') }}">Today</a>
     <a class="nav__link {% if request.endpoint == 'core.upload' %}is-active{% endif %}"
        href="{{ url_for('core.upload') }}">Upload</a>
+    <a class="nav__link {% if request.endpoint in ('core.plan', 'core.timetable', 'core.calendar') %}is-active{% endif %}"
+       href="{{ url_for('core.plan') }}">Plan</a>
     <a class="nav__link {% if request.endpoint == 'core.history' %}is-active{% endif %}"
        href="{{ url_for('core.history') }}">History</a>
     <a class="nav__link {% if request.endpoint == 'core.settings' %}is-active{% endif %}"
