@@ -99,9 +99,14 @@ class ReportSnapshot(db.Model):
     period_start = db.Column(db.Date, nullable=False)
     period_end = db.Column(db.Date, nullable=False)
     file_path = db.Column(db.String(500), nullable=False)   # raw PDF, private dir
+    original_filename = db.Column(db.String(255))
     file_sha256 = db.Column(db.String(64), nullable=False, index=True)
     lecture_count = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="merged")  # merged|duplicate|error
+    # staged = parsed and stored, waiting on the user's alias decisions.
+    status = db.Column(db.String(20), nullable=False, default="merged")  # merged|staged|duplicate|error
+    #: Parsed rows exactly as the adapter produced them. Keeping these makes the
+    #: ledger a replayable fold over snapshots (ADR-4) without re-reading PDFs.
+    parsed_json = db.Column(db.Text)
 
 
 class LectureInstance(db.Model):
@@ -115,6 +120,12 @@ class LectureInstance(db.Model):
     status = db.Column(db.String(3), nullable=False)  # P|A|AG|L|NU
     first_seen_snapshot_id = db.Column(db.Integer, db.ForeignKey("report_snapshot.id"), nullable=False)
     last_updated_snapshot_id = db.Column(db.Integer, db.ForeignKey("report_snapshot.id"), nullable=False)
+    #: Present in the ledger but absent from a later report covering its date —
+    #: possibly cancelled or corrected upstream. Flagged for review, never
+    #: silently deleted (implementation-plan §3.2 rule 4).
+    is_vanished = db.Column(db.Boolean, nullable=False, default=False)
+
+    subject = db.relationship("Subject")
 
     __table_args__ = (
         db.UniqueConstraint("subject_id", "on_date", "start_time",
