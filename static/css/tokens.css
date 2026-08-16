@@ -1,0 +1,121 @@
+/* ==========================================================================
+   BUNKMATE DESIGN TOKENS — v1.0 (Neo-Brutalism)
+   --------------------------------------------------------------------------
+   Style rules (from reference sheet):
+   · Black strokes + black hard shadows (X/Y offset, 0 blur, 100% opacity)
+   · Vibrant high-saturation accents on a warm cream base + muted pastels
+   · No gradients. Ever.
+   · Big chunky type, experimental letter-spacing on labels
+   Fonts (Google Fonts):
+   @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Lexend+Mega:wght@500;700&family=Public+Sans:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap');
+   ========================================================================== */
+
+:root {
+  /* ---- Surfaces & ink ------------------------------------------------- */
+  --paper:        #FAF3EB;  /* app background — warm cream               */
+  --card:         #FFFDF8;  /* raised card surface                       */
+  --ink:          #111111;  /* text, borders, shadows — THE black        */
+  --ink-muted:    #4A4640;  /* secondary text (8.5:1 on paper)           */
+  --ink-inverse:  #FAF3EB;  /* text on ink surfaces                      */
+
+  /* ---- Vibrant accents (decorative, blocks, buttons) ------------------ */
+  --acc-yellow:   #F4D738;
+  --acc-red:      #FF6B6B;
+  --acc-orange:   #FF7A5C;
+  --acc-purple:   #A388EE;
+  --acc-cyan:     #69D2E7;
+  --acc-pink:     #FFB2EF;
+  --acc-blue:     #87CEEB;
+  --acc-green:    #90EE90;
+
+  /* ---- Muted pastels (tinted cards, table stripes, soft chips) -------- */
+  --soft-yellow:  #FDFD96;
+  --soft-purple:  #E3DFF2;
+  --soft-cyan:    #DAF5F0;
+  --soft-green:   #BAFCA2;
+  --soft-pink:    #FCDFFF;
+  --soft-orange:  #F8D6B3;
+
+  /* ---- Semantic status (the ONE color language of the app) ------------
+     safe   = green  → skippable / above limit
+     warn   = amber  → tight, little budget left
+     danger = red    → below limit / must attend
+     pending= purple → NU lectures, unknowns  (deliberately NOT in the
+                       safe/warn/danger family — unknowns aren't verdicts)
+     Fills take ink text + ink border. Deep variants are for colored TEXT
+     on paper/card (all ≥ 4.5:1, WCAG AA, verified). Never color alone —
+     status always ships with a label or icon.                            */
+  --safe-fill:    #90EE90;  --safe-soft:    #BAFCA2;  --safe-deep:    #1A7F37;
+  --warn-fill:    #F4D738;  --warn-soft:    #FDFD96;  --warn-deep:    #8A5A00;
+  --danger-fill:  #FF6B6B;  --danger-soft:  #FFC7C7;  --danger-deep:  #C81E2E;
+  --pending-fill: #A388EE;  --pending-soft: #E3DFF2;  --pending-deep: #6C2BD9;
+  --info-fill:    #87CEEB;  --info-soft:    #DAF5F0;
+
+  /* ---- Brand roles ----------------------------------------------------- */
+  --brand-primary: var(--acc-yellow);   /* primary actions (Upload PDF)   */
+  --brand-accent:  var(--acc-purple);   /* secondary emphasis, links      */
+
+  /* ---- Borders & radii -------------------------------------------------
+     Rounded-but-chunky, like the component-library reference.
+     radius-0 exists for deliberately sharp moments (hero blocks).        */
+  --bw:           2px;                  /* default stroke                 */
+  --bw-heavy:     3px;                  /* cards, dropzone, emphasis      */
+  --border:       var(--bw) solid var(--ink);
+  --border-heavy: var(--bw-heavy) solid var(--ink);
+  --radius-0:     0;
+  --radius-sm:    8px;                  /* buttons, inputs, chips         */
+  --radius-md:    12px;                 /* cards                          */
+  --radius-lg:    16px;                 /* modals, hero cards             */
+  --radius-pill:  999px;                /* pills, toggles                 */
+
+  /* ---- Hard shadows (offset only — blur is ALWAYS 0) ------------------- */
+  --shadow-sm:    2px 2px 0 var(--ink);
+  --shadow-md:    4px 4px 0 var(--ink);
+  --shadow-lg:    6px 6px 0 var(--ink);
+  --shadow-xl:    10px 10px 0 var(--ink);
+
+  /* ---- Typography -------------------------------------------------------
+     display : Archivo Black — hero numbers, page titles, verdicts
+     label   : Lexend Mega   — eyebrows, buttons, table headers (UPPERCASE)
+     body    : Public Sans   — everything readable
+     mono    : Space Mono    — every NUMBER, date, time, %, code           */
+  --font-display: 'Archivo Black', 'Archivo', system-ui, sans-serif;
+  --font-label:   'Lexend Mega', 'Public Sans', sans-serif;
+  --font-body:    'Public Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:    'Space Mono', ui-monospace, 'Courier New', monospace;
+
+  --text-xs:   0.75rem;   /* 12 — fine print, table meta        */
+  --text-sm:   0.875rem;  /* 14 — secondary body, chips         */
+  --text-base: 1rem;      /* 16 — body                          */
+  --text-lg:   1.125rem;  /* 18 — emphasized body               */
+  --text-xl:   1.375rem;  /* 22 — card titles                   */
+  --text-2xl:  1.75rem;   /* 28 — section titles                */
+  --text-3xl:  2.25rem;   /* 36 — page titles                   */
+  --text-4xl:  3rem;      /* 48 — stat numbers                  */
+  --text-hero: 4rem;      /* 64 — THE verdict                   */
+
+  --leading-tight: 1.1;
+  --leading-body:  1.55;
+  --tracking-label: 0.02em;   /* Lexend Mega is already ultra-wide  */
+  --tracking-caps:  0.08em;   /* uppercased Public Sans / mono      */
+
+  /* ---- Spacing (4px base) ---------------------------------------------- */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  /* ---- Motion -----------------------------------------------------------
+     Interaction pattern: elements SIT ON their shadow.
+     hover  → translate(-2px,-2px) + shadow grows one step
+     active → translate(2px,2px)  + shadow collapses to 0 (pressed flat)
+     No fades, no scaling, no blur — movement is physical and snappy.     */
+  --dur-fast: 100ms;
+  --dur:      150ms;
+  --ease:     cubic-bezier(0.2, 0.8, 0.3, 1);
+
+  /* ---- Z-index ---------------------------------------------------------- */
+  --z-nav: 100; --z-dropdown: 200; --z-modal: 500; --z-toast: 900;
+
+  /* ---- Focus ------------------------------------------------------------ */
+  --focus-ring: 3px dashed var(--ink);
+  --focus-offset: 3px;
+}
