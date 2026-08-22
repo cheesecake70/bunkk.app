@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Calendar · Bunkmate{% endblock %}
+{% block title %}Calendar · Bunkr{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div class="eyebrow">Holidays &amp; swap-days</div>
   <h1>Semester calendar</h1>
   <p class="page-head__sub">
-    Tap any future day to cycle it: normal → holiday → swap-day. Bunkmate only ever
+    Tap any future day to cycle it: normal → holiday → swap-day. Bunkr only ever
     looks forwards, so you never have to fill in the past.
   </p>
 </div>
@@ -18,7 +18,7 @@
       <input class="input input--mono" id="end_date" name="end_date" type="date"
              value="{{ semester_end.isoformat() if semester_end else '' }}" required>
       <div class="field__hint">
-        The one date Bunkmate ever asks you for — everything else is inferred.
+        The one date Bunkr ever asks you for — everything else is inferred.
       </div>
     </div>
     <button class="btn btn--primary" type="submit">
@@ -32,7 +32,7 @@
   <div class="banner__icon">⚠️</div>
   <div class="banner__body">
     <div class="banner__title">No timetable confirmed yet</div>
-    <div class="banner__text">Holidays only change the maths once Bunkmate knows your weekly grid.</div>
+    <div class="banner__text">Holidays only change the maths once Bunkr knows your weekly grid.</div>
   </div>
   <a class="btn btn--sm" href="{{ url_for('core.timetable') }}">Confirm it</a>
 </div>
@@ -83,7 +83,7 @@
 
 {% block scripts %}
 <script>
-  window.BUNKMATE_WEEKDAYS = {{ weekdays|tojson }};
+  window.BUNKR_WEEKDAYS = {{ weekdays|tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
 {% endblock %}

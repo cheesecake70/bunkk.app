@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}Bunkmate{% endblock %}</title>
+<title>{% block title %}Bunkr{% endblock %}</title>
 <meta name="theme-color" content="#F4D738">
 <meta name="description" content="Know in ten seconds whether you can skip college today.">
 <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
 <link rel="icon" href="{{ url_for('static', filename='icons/favicon-32.png') }}" sizes="32x32">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Bunkmate">
+<meta name="apple-mobile-web-app-title" content="Bunkr">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
 
 {% if current_user.is_authenticated %}
 <nav class="nav">
-  <a href="{{ url_for('core.dashboard') }}" class="nav__logo" style="text-decoration:none">BUNKMATE</a>
+  <a href="{{ url_for('core.dashboard') }}" class="nav__logo" style="text-decoration:none">BUNKR</a>
   <div class="nav__links">
     <a class="nav__link {% if request.endpoint == 'core.dashboard' %}is-active{% endif %}"
        href="{{ url_for('core.dashboard') }}">Today</a>
@@ -35,8 +35,6 @@
        href="{{ url_for('core.history') }}">History</a>
     <a class="nav__link {% if request.endpoint == 'core.settings' %}is-active{% endif %}"
        href="{{ url_for('core.settings') }}">Settings</a>
-    <a class="nav__link {% if request.blueprint == 'account' %}is-active{% endif %}"
-       href="{{ url_for('account.index') }}">Account</a>
   </div>
   <span style="flex:1"></span>
   <form method="post" action="{{ url_for('auth.logout') }}" style="margin:0">

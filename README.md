@@ -1,4 +1,4 @@
-# Bunkmate 🎒
+# Bunkr 🎒
 
 Attendance calculator & manager for university students. Upload your college
 attendance PDF → know exactly what you can skip.
@@ -43,9 +43,8 @@ portal's own summary report for all 14 subjects.
   planned absences spend first, and lectures held since the last upload counted
   as unknowns (they can't be attended any more, so ignoring them would
   overstate the budget).
-- The **GO/SKIP hero**: today's verdict in one word, a two-week day strip,
-  leave-early / arrive-late options on partial days, and "breaks first" naming
-  the tightest subject.
+- The **GO/SKIP hero**: today's verdict in one word, a two-week day strip, and
+  leave-early / arrive-late options on partial days.
 - Plan-ahead simulator: commit future absences (whole day or one subject) and
   watch every budget recompute; over-commitment names what breaks.
 
@@ -69,10 +68,8 @@ portal's own summary report for all 14 subjects.
 **Multi-user** — the schema was multi-tenant from Phase 0, so this is about
 everything that only becomes a question with a second person:
 
-- **Invite-only registration** (the default). The first account on a fresh
-  server needs no code; everyone after arrives on a single-use invite from an
-  existing user, so leaving this on a public URL isn't the same as handing out
-  accounts. `BUNKMATE_REGISTRATION=open|invite|closed`.
+- **Open registration**: email, username and a password typed twice. You can
+  sign in with either the username or the email.
 - **One student, one account.** A student number is claimed by the first
   account to upload it and is unique thereafter, so uploading a friend's PDF
   can no longer silently claim their identity and build a second, diverging
@@ -82,8 +79,8 @@ everything that only becomes a question with a second person:
   foreign keys enforced so a deleted account can't orphan a ledger.
 - **Login lockout** after repeated failures, with identical wording for unknown
   emails and wrong passwords so the form can't enumerate who has an account.
-- **Take your data or leave**: full JSON export, and a password-confirmed
-  deletion that removes every row and the raw PDFs.
+- **Leaving is easy**: a password-confirmed deletion that removes every row and
+  the raw PDFs.
 - Production refuses to boot with the development `SECRET_KEY` — forgeable
   sessions stop being a dev nicety once other people have accounts.
 
@@ -97,7 +94,7 @@ a limit.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-flask db upgrade                  # create/upgrade instance/bunkmate.db
+flask db upgrade                  # create/upgrade instance/bunkr.db
 python -m pytest tests/ -q        # should be all green
 python run.py                     # http://127.0.0.1:5000
 ```
@@ -135,7 +132,7 @@ Then one hourly cron line covers every user, since each run only picks up the
 people whose chosen hour matches:
 
 ```bash
-0 * * * * cd /srv/bunkmate && .venv/bin/flask push-briefs >> /var/log/bunkmate.log 2>&1
+0 * * * * cd /srv/bunkr && .venv/bin/flask push-briefs >> /var/log/bunkr.log 2>&1
 ```
 
 `flask push-briefs --dry-run` prints what would be sent without sending it.
@@ -147,19 +144,20 @@ iOS restricts push to installed web apps.
 
 ```bash
 export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
-export BUNKMATE_CONFIG=config.ProdConfig
-export BUNKMATE_REGISTRATION=invite      # the default
+export BUNKR_CONFIG=config.ProdConfig
 flask db upgrade
 gunicorn "run:app"
 ```
 
-Register the first account (no code needed), then hand out invites from
-**Account**. Back up `instance/bunkmate.db` *and* `instance/uploads/` together —
+Back up `instance/bunkr.db` *and* `instance/uploads/` together —
 the ledger is replayable from the snapshots only if the PDFs survive with it.
 
-Note for migrations: SQLite DDL isn't transactional, so a migration that fails
+Two SQLite notes. Its DDL isn't transactional, so a migration that fails
 part-way leaves the half-created table behind while the revision stays at the
-old version. Drop the stray table before re-running `flask db upgrade`.
+old version — drop the stray table before re-running `flask db upgrade`. And in
+WAL mode the database is three files: never move or copy `bunkr.db` without
+`bunkr.db-wal` beside it, or you silently lose everything not yet
+checkpointed.
 
 ## Next (Phase 4 — the rest of opening up)
 

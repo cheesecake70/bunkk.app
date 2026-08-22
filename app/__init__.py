@@ -1,4 +1,4 @@
-"""Bunkmate Flask application factory."""
+"""Bunkr Flask application factory."""
 from __future__ import annotations
 
 import os
@@ -46,7 +46,7 @@ def create_app(config_object: str | None = None) -> Flask:
     )
 
     app.config.from_object(config_object or os.environ.get(
-        "BUNKMATE_CONFIG", "config.DevConfig"
+        "BUNKR_CONFIG", "config.DevConfig"
     ))
     os.makedirs(app.instance_path, exist_ok=True)
 

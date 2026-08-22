@@ -32,7 +32,7 @@
 
   if (!supported) {
     toggle.disabled = true;
-    say("This browser can't do push notifications. On iPhone, add Bunkmate to your home screen first.");
+    say("This browser can't do push notifications. On iPhone, add Bunkr to your home screen first.");
     return;
   }
   if (toggle.dataset.configured !== "1") {

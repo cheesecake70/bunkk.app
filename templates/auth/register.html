@@ -1,62 +1,59 @@
 {% extends "base.html" %}
-{% block title %}Create account · Bunkmate{% endblock %}
+{% block title %}Create account · Bunkr{% endblock %}
 
 {% block content %}
 <div class="wrap--narrow" style="margin:0 auto">
   <div style="text-align:center;margin-bottom:var(--sp-6)">
-    <span class="nav__logo" style="font-size:var(--text-2xl)">BUNKMATE</span>
+    <span class="nav__logo" style="font-size:var(--text-2xl)">BUNKR</span>
     <p class="text-muted" style="margin-top:var(--sp-4)">
       Upload your report. Never do attendance maths again.
     </p>
   </div>
 
-  {% if bootstrap %}
-  <div class="banner banner--info" style="margin-bottom:var(--sp-5)">
-    <div class="banner__icon">👋</div>
-    <div class="banner__body">
-      <div class="banner__title">First account on this server</div>
-      <div class="banner__text">
-        You're setting it up, so no invite needed. Everyone after you will need
-        a code from you.
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
   <form method="post" class="card">
     <h3>Create your account</h3>
-
-    {% if needs_invite %}
-    <div class="field">
-      <label for="invite">Invite code</label>
-      <input class="input input--mono {% if errors.invite %}is-error{% endif %}"
-             id="invite" name="invite" value="{{ invite }}" required
-             {% if not invite %}autofocus{% endif %}>
-      {% if errors.invite %}
-        <div class="field__error">{{ errors.invite }}</div>
-      {% else %}
-        <div class="field__hint">Ask whoever runs this Bunkmate for one.</div>
-      {% endif %}
-    </div>
-    {% endif %}
 
     <div class="field">
       <label for="email">Email</label>
       <input class="input {% if errors.email %}is-error{% endif %}"
-             id="email" name="email" type="email" value="{{ email }}" required
-             {% if invite or not needs_invite %}autofocus{% endif %}>
+             id="email" name="email" type="email" value="{{ email }}" required autofocus>
       {% if errors.email %}<div class="field__error">{{ errors.email }}</div>{% endif %}
     </div>
+
+    <div class="field">
+      <label for="username">Username</label>
+      <input class="input {% if errors.username %}is-error{% endif %}"
+             id="username" name="username" value="{{ username }}"
+             autocomplete="username" required>
+      {% if errors.username %}
+        <div class="field__error">{{ errors.username }}</div>
+      {% else %}
+        <div class="field__hint">3–32 characters: letters, numbers, dots or underscores.</div>
+      {% endif %}
+    </div>
+
     <div class="field">
       <label for="password">Password</label>
       <input class="input {% if errors.password %}is-error{% endif %}"
-             id="password" name="password" type="password" required>
+             id="password" name="password" type="password"
+             autocomplete="new-password" required>
       {% if errors.password %}
         <div class="field__error">{{ errors.password }}</div>
       {% else %}
         <div class="field__hint">At least 8 characters.</div>
       {% endif %}
     </div>
+
+    <div class="field">
+      <label for="confirm_password">Confirm password</label>
+      <input class="input {% if errors.confirm_password %}is-error{% endif %}"
+             id="confirm_password" name="confirm_password" type="password"
+             autocomplete="new-password" required>
+      {% if errors.confirm_password %}
+        <div class="field__error">{{ errors.confirm_password }}</div>
+      {% endif %}
+    </div>
+
     <button class="btn btn--primary btn--lg" type="submit" style="width:100%;justify-content:center">Create account</button>
   </form>
 

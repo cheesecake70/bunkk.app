@@ -39,7 +39,7 @@ bp = Blueprint("core", __name__)
 
 @bp.get("/healthz")
 def healthz():
-    return jsonify(status="ok", app="bunkmate", phase=3)
+    return jsonify(status="ok", app="bunkr", phase=3)
 
 
 @bp.get("/sw.js")
@@ -132,7 +132,7 @@ def history():
 @bp.route("/timetable", methods=["GET", "POST"])
 @login_required
 def timetable():
-    """Confirm the grid Bunkmate inferred, rather than typing one in."""
+    """Confirm the grid Bunkr inferred, rather than typing one in."""
     subjects = {
         s.id: s
         for s in db.session.query(Subject).filter_by(user_id=current_user.id).all()

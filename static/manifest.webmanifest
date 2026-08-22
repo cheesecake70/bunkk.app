@@ -1,6 +1,6 @@
 {
-  "name": "Bunkmate — attendance & bunk budget",
-  "short_name": "Bunkmate",
+  "name": "Bunkr — attendance & bunk budget",
+  "short_name": "Bunkr",
   "description": "Know in ten seconds whether you can skip college today.",
   "start_url": "/",
   "scope": "/",

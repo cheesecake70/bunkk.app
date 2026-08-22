@@ -131,7 +131,7 @@
   function renderProposals(data) {
     result.innerHTML = "";
     result.appendChild(banner("info", "❓", "One quick question",
-      "A course name changed. Tell Bunkmate once and it will remember forever."));
+      "A course name changed. Tell Bunkr once and it will remember forever."));
 
     var card = el("div", "card");
     var answers = {};

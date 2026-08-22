@@ -55,7 +55,7 @@ def frozen(monkeypatch):
 @pytest.fixture()
 def client(app):
     client = app.test_client()
-    client.post("/register", data={"email": "m@example.com", "password": "password123"})
+    client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
     return client
 
 
@@ -171,7 +171,7 @@ class TestMorningBrief:
         with app.app_context():
             from app import planning
 
-            user = User(email="quiet@example.com")
+            user = User(email="quiet@example.com", username="quiet")
             user.set_password("password123")
             db.session.add(user)
             db.session.flush()
@@ -186,7 +186,7 @@ class TestPushEndpoints:
 
     def test_subscribing_stores_the_device_and_opts_in(self, push_app):
         client = push_app.test_client()
-        client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
 
         assert subscribe(client).status_code == 200
         with push_app.app_context():
@@ -196,7 +196,7 @@ class TestPushEndpoints:
 
     def test_subscribing_twice_is_idempotent(self, push_app):
         client = push_app.test_client()
-        client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         subscribe(client)
         subscribe(client)
         with push_app.app_context():
@@ -205,11 +205,11 @@ class TestPushEndpoints:
     def test_an_endpoint_moving_to_another_account_is_reassigned(self, push_app):
         """Browsers reuse endpoints; two accounts must never share one device row."""
         first = push_app.test_client()
-        first.post("/register", data={"email": "a@example.com", "password": "password123"})
+        first.post("/register", data={"email": "a@example.com", "password": "password123", "username": "auser", "confirm_password": "password123"})
         subscribe(first)
 
         second = push_app.test_client()
-        second.post("/register", data={"email": "b@example.com", "password": "password123"})
+        second.post("/register", data={"email": "b@example.com", "password": "password123", "username": "buser", "confirm_password": "password123"})
         subscribe(second)
 
         with push_app.app_context():
@@ -219,7 +219,7 @@ class TestPushEndpoints:
 
     def test_unsubscribing_removes_the_device_and_opts_out(self, push_app):
         client = push_app.test_client()
-        client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         subscribe(client)
 
         client.post("/api/push/unsubscribe", json={"endpoint": "https://push.example.com/abc"})
@@ -229,7 +229,7 @@ class TestPushEndpoints:
 
     def test_incomplete_subscription_is_refused(self, push_app):
         client = push_app.test_client()
-        client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         resp = client.post("/api/push/subscribe", json={"endpoint": "https://x/y"})
         assert resp.status_code == 400
 
@@ -267,7 +267,7 @@ class TestDelivery:
 
     def test_a_gone_subscription_is_deleted_not_retried(self, push_app, monkeypatch):
         client = push_app.test_client()
-        client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         subscribe(client)
         self._stub(monkeypatch, outcome=410)
 
@@ -280,7 +280,7 @@ class TestDelivery:
 
     def test_a_transient_failure_keeps_the_subscription(self, push_app, monkeypatch):
         client = push_app.test_client()
-        client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         subscribe(client)
         self._stub(monkeypatch, outcome=503)
 
@@ -293,7 +293,7 @@ class TestDelivery:
 
     def test_successful_send_records_the_timestamp(self, push_app, monkeypatch):
         client = push_app.test_client()
-        client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         subscribe(client)
         calls = self._stub(monkeypatch, outcome=None)
 
@@ -308,7 +308,7 @@ class TestDelivery:
 
 class TestCronTargeting:
     def _user(self, email, hour, enabled=True):
-        user = User(email=email)
+        user = User(email=email, username=email.split("@")[0])
         user.set_password("password123")
         db.session.add(user)
         db.session.flush()

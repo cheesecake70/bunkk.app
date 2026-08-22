@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Plan · Bunkmate{% endblock %}
+{% block title %}Plan · Bunkr{% endblock %}
 
 {% block content %}
 {% if not ready %}
@@ -46,13 +46,6 @@
     <div class="stat__value num">{{ wallet.overall_remaining }}</div>
     <div class="stat__meta">until the semester ends</div>
   </div>
-  {% if wallet.tightest %}
-  <div class="stat stat--{{ wallet.tightest.verdict.value }}">
-    <div class="stat__label">Breaks first</div>
-    <div class="stat__value num">{{ wallet.tightest.code }}</div>
-    <div class="stat__meta">{{ wallet.tightest.budget }} left of its own</div>
-  </div>
-  {% endif %}
 </div>
 
 {% if not result.is_safe %}

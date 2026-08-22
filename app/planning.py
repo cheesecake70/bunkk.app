@@ -432,7 +432,7 @@ class Brief:
     title: str
     body: str
     url: str = "/"
-    tag: str = "bunkmate-morning"
+    tag: str = "bunkr-morning"
 
 
 def morning_brief(user, today: date | None = None) -> Brief | None:

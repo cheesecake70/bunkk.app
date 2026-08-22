@@ -244,7 +244,7 @@ def _check_identity(user: User, report: ParsedReport) -> None:
         if claimed is not None:
             raise MergeError(
                 f"Student {header.student_number} is already set up on another "
-                "Bunkmate account. If that's you, sign in as that account "
+                "Bunkr account. If that's you, sign in as that account "
                 "instead of uploading the report here."
             )
 

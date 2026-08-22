@@ -26,7 +26,7 @@ def test_models_create_and_query(app):
     with app.app_context():
         college = College(name="SVKM")
         db.session.add(college)
-        user = User(email="test@example.com", college=college)
+        user = User(email="test@example.com", username="tester", college=college)
         user.set_password("s3cret")
         db.session.add(user)
         db.session.flush()

@@ -32,18 +32,23 @@ def app(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def client(app, monkeypatch):
+    import app.api as api_module
     import app.planning as planning_module
 
-    # Freeze "today" everywhere the planning layer asks for it.
+    # Freeze "today" everywhere a request can ask for it. The API modules need
+    # this as much as the planning layer: their "that day has already happened"
+    # guards call date.today() themselves, so patching only planning left these
+    # tests passing purely because the wall clock happened to sit near TODAY.
     class FrozenDate(date):
         @classmethod
         def today(cls):
             return TODAY
 
     monkeypatch.setattr(planning_module, "date", FrozenDate)
+    monkeypatch.setattr(api_module, "date", FrozenDate)
 
     client = app.test_client()
-    client.post("/register", data={"email": "m@example.com", "password": "password123"})
+    client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
     client.post(
         "/api/reports",
         data={"report": (GOLDEN.open("rb"), "report.pdf")},

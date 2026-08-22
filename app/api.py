@@ -116,7 +116,7 @@ def calendar_day():
         return jsonify(error="Bad date."), 400
 
     if on_date < date.today():
-        return jsonify(error="Bunkmate only plans forwards — past days can't change."), 400
+        return jsonify(error="Bunkr only plans forwards — past days can't change."), 400
 
     kind = payload.get("kind")
     if kind not in (None, "holiday", "swap"):
@@ -263,10 +263,10 @@ def push_test():
 
     brief = planning.morning_brief(current_user)
     payload = push.brief_payload(brief) if brief else {
-        "title": "Bunkmate works",
+        "title": "Bunkr works",
         "body": "Nothing to report right now — you're all caught up.",
         "url": "/",
-        "tag": "bunkmate-test",
+        "tag": "bunkr-test",
     }
     delivered = push.send_to_user(current_user, payload)
     if not delivered:
@@ -285,7 +285,6 @@ def _wallet_payload(extras=None) -> dict:
         "is_safe": result.is_safe,
         "breaks": result.breaks,
         "overall_breaks": result.overall_breaks,
-        "tightest": wallet.tightest.code if wallet.tightest else None,
         "subjects": [
             {
                 "id": s.subject_id,

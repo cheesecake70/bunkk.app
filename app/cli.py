@@ -3,7 +3,7 @@
 One hourly line in crontab covers everyone, because each run only picks up the
 users whose chosen hour matches:
 
-    0 * * * * cd /srv/bunkmate && .venv/bin/flask push-briefs >> /var/log/bunkmate.log 2>&1
+    0 * * * * cd /srv/bunkr && .venv/bin/flask push-briefs >> /var/log/bunkr.log 2>&1
 """
 from __future__ import annotations
 

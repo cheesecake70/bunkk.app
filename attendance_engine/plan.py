@@ -87,11 +87,6 @@ class Wallet:
     overall_budget: int
     overall_verdict: Verdict
 
-    @property
-    def tightest(self) -> SubjectPlan | None:
-        """The subject that breaks first — what a warning should name."""
-        return min(self.subjects, key=lambda s: s.budget) if self.subjects else None
-
     def by_id(self) -> dict[int, SubjectPlan]:
         return {s.subject_id: s for s in self.subjects}
 

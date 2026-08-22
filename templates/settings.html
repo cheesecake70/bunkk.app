@@ -1,142 +1,184 @@
 {% extends "base.html" %}
-{% block title %}Settings · Bunkmate{% endblock %}
+{% block title %}Settings · Bunkr{% endblock %}
 
 {% block content %}
 <div class="page-head">
-  <div class="eyebrow">Limits &amp; nudges</div>
+  <div class="eyebrow">Your account &amp; your limits</div>
   <h1>Settings</h1>
 </div>
 
-<form method="post" class="stack--lg">
+<div class="stack--lg">
+
+  {# ---- Profile ------------------------------------------------------- #}
   <div class="card">
-    <h3>Attendance limits</h3>
-    <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
-      The subject limit applies to each course <em>and lecture type</em> on its own —
-      theory and lab each have to clear it separately.
-    </p>
-
-    <div class="field">
-      <label for="subject_limit">Subject limit %</label>
-      <input class="input input--mono {% if errors.subject_limit %}is-error{% endif %}"
-             id="subject_limit" name="subject_limit" inputmode="numeric"
-             value="{{ settings.subject_limit }}">
-      {% if errors.subject_limit %}
-        <div class="field__error">{{ errors.subject_limit }}</div>
-      {% else %}
-        <div class="field__hint">Default for every subject.</div>
-      {% endif %}
-    </div>
-
-    <div class="field">
-      <label for="overall_limit">Overall limit %</label>
-      <input class="input input--mono {% if errors.overall_limit %}is-error{% endif %}"
-             id="overall_limit" name="overall_limit" inputmode="numeric"
-             value="{{ settings.overall_limit }}">
-      {% if errors.overall_limit %}
-        <div class="field__error">{{ errors.overall_limit }}</div>
-      {% else %}
-        <div class="field__hint">Across every lecture of every subject.</div>
-      {% endif %}
-    </div>
-
-    <div class="field" style="margin-bottom:0">
-      <label for="staleness_days">Nudge me after (days)</label>
-      <input class="input input--mono {% if errors.staleness_days %}is-error{% endif %}"
-             id="staleness_days" name="staleness_days" inputmode="numeric"
-             value="{{ settings.staleness_days }}">
-      {% if errors.staleness_days %}
-        <div class="field__error">{{ errors.staleness_days }}</div>
-      {% else %}
-        <div class="field__hint">How long your newest report may age before Bunkmate says something.</div>
-      {% endif %}
-    </div>
-  </div>
-
-  {% if subjects %}
-  <div class="card">
-    <h3>Per-subject overrides</h3>
-    <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
-      Leave blank to use the {{ settings.subject_limit }}% default.
-    </p>
-    {% for subject in subjects %}
-    <div class="limit-row">
-      <div>
-        <b class="mono">{{ subject.code }}</b>
-        <span class="text-muted" style="font-size:var(--text-sm)"> · {{ subject.lecture_type }}</span>
+    <h3>Profile</h3>
+    <form method="post" action="{{ url_for('account.update_profile') }}">
+      <div class="field">
+        <label for="username">Username</label>
+        <input class="input" id="username" name="username"
+               value="{{ current_user.username }}" required>
+        <div class="field__hint">Letters, numbers, dots or underscores. You can sign in with this or your email.</div>
       </div>
-      <input class="input input--mono {% if errors['custom_limit_' ~ subject.id] %}is-error{% endif %}"
-             name="custom_limit_{{ subject.id }}" inputmode="numeric"
-             placeholder="{{ settings.subject_limit }}"
-             value="{{ subject.custom_limit if subject.custom_limit is not none else '' }}">
+      <div class="field">
+        <label for="name">Display name</label>
+        <input class="input" id="name" name="name" value="{{ current_user.name or '' }}"
+               placeholder="Taken from your report if you leave it blank">
+      </div>
+      <div class="row" style="margin-bottom:var(--sp-4)">
+        <span class="badge badge--neutral">{{ current_user.email }}</span>
+        {% if current_user.student_number %}
+          <span class="badge badge--neutral">Student {{ current_user.student_number }}</span>
+        {% endif %}
+        {% if current_user.roll_no %}
+          <span class="badge badge--neutral">Roll {{ current_user.roll_no }}</span>
+        {% endif %}
+        {% if push_devices %}
+          <span class="badge badge--safe">{{ push_devices }} {{ 'device' if push_devices == 1 else 'devices' }}</span>
+        {% endif %}
+      </div>
+      <button class="btn btn--primary" type="submit">Save profile</button>
+    </form>
+  </div>
+
+  {# ---- Limits -------------------------------------------------------- #}
+  <form method="post" class="stack--lg">
+    <div class="card">
+      <h3>Attendance limits</h3>
+      <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
+        The subject limit applies to each course <em>and lecture type</em> on its own —
+        theory and lab each have to clear it separately.
+      </p>
+
+      <div class="field">
+        <label for="subject_limit">Subject limit %</label>
+        <input class="input input--mono {% if errors.subject_limit %}is-error{% endif %}"
+               id="subject_limit" name="subject_limit" inputmode="numeric"
+               value="{{ settings.subject_limit }}">
+        {% if errors.subject_limit %}
+          <div class="field__error">{{ errors.subject_limit }}</div>
+        {% else %}
+          <div class="field__hint">Default for every subject.</div>
+        {% endif %}
+      </div>
+
+      <div class="field">
+        <label for="overall_limit">Overall limit %</label>
+        <input class="input input--mono {% if errors.overall_limit %}is-error{% endif %}"
+               id="overall_limit" name="overall_limit" inputmode="numeric"
+               value="{{ settings.overall_limit }}">
+        {% if errors.overall_limit %}
+          <div class="field__error">{{ errors.overall_limit }}</div>
+        {% else %}
+          <div class="field__hint">Across every lecture of every subject.</div>
+        {% endif %}
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <label for="staleness_days">Nudge me after (days)</label>
+        <input class="input input--mono {% if errors.staleness_days %}is-error{% endif %}"
+               id="staleness_days" name="staleness_days" inputmode="numeric"
+               value="{{ settings.staleness_days }}">
+        {% if errors.staleness_days %}
+          <div class="field__error">{{ errors.staleness_days }}</div>
+        {% else %}
+          <div class="field__hint">How long your newest report may age before Bunkr says something.</div>
+        {% endif %}
+      </div>
     </div>
-    {% endfor %}
-  </div>
-  {% endif %}
 
-  <div class="row">
-    <button class="btn btn--primary" type="submit">Save settings</button>
-    <a class="btn btn--ghost" href="{{ url_for('core.dashboard') }}">Cancel</a>
-  </div>
-</form>
-
-<div class="card card--cyan" style="margin-top:var(--sp-5)">
-  <h3>Morning notification</h3>
-  <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
-    One notification a day with tomorrow's verdict — so most mornings you don't
-    have to open anything at all.
-  </p>
-
-  <div class="row" style="margin-bottom:var(--sp-3)">
-    <label class="toggle">
-      <input type="checkbox" id="push-toggle"
-             data-configured="{{ '1' if push_configured else '0' }}"
-             data-key="{{ push_public_key or '' }}"
-             {% if settings.notify_enabled and push_devices %}checked{% endif %}>
-      <span class="toggle__track"></span>
-    </label>
-    <span id="push-status" class="text-muted" style="font-size:var(--text-sm)">
-      {% if settings.notify_enabled and push_devices %}
-        On — {{ push_devices }} {{ 'device' if push_devices == 1 else 'devices' }} registered.
-      {% else %}
-        Off.
-      {% endif %}
-    </span>
-    <button class="btn btn--sm" id="push-test" type="button"
-            {% if not (settings.notify_enabled and push_devices) %}hidden{% endif %}>
-      Send a test
-    </button>
-  </div>
-
-  <form method="post" class="row" style="align-items:flex-end;gap:var(--sp-3)">
-    <div class="field" style="margin:0;max-width:160px">
-      <label for="notify_hour">Send at</label>
-      <input class="input input--mono {% if errors.notify_hour %}is-error{% endif %}"
-             id="notify_hour" name="notify_hour" inputmode="numeric"
-             value="{{ settings.notify_hour }}">
-      {% if errors.notify_hour %}
-        <div class="field__error">{{ errors.notify_hour }}</div>
-      {% else %}
-        <div class="field__hint">Hour of the day, 0–23.</div>
-      {% endif %}
+    {% if subjects %}
+    <div class="card">
+      <h3>Per-subject overrides</h3>
+      <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
+        Leave blank to use the {{ settings.subject_limit }}% default.
+      </p>
+      {% for subject in subjects %}
+      <div class="limit-row">
+        <div>
+          <b class="mono">{{ subject.code }}</b>
+          <span class="text-muted" style="font-size:var(--text-sm)"> · {{ subject.lecture_type }}</span>
+        </div>
+        <input class="input input--mono {% if errors['custom_limit_' ~ subject.id] %}is-error{% endif %}"
+               name="custom_limit_{{ subject.id }}" inputmode="numeric"
+               placeholder="{{ settings.subject_limit }}"
+               value="{{ subject.custom_limit if subject.custom_limit is not none else '' }}">
+      </div>
+      {% endfor %}
     </div>
-    <input type="hidden" name="only_notify_hour" value="1">
-    <button class="btn btn--sm" type="submit">Save time</button>
+    {% endif %}
+
+    <div class="row">
+      <button class="btn btn--primary" type="submit">Save settings</button>
+      <a class="btn btn--ghost" href="{{ url_for('core.dashboard') }}">Cancel</a>
+    </div>
   </form>
 
-  <p class="text-muted" style="font-size:var(--text-sm);margin-bottom:0">
-    On iPhone, add Bunkmate to your home screen first — iOS only allows
-    notifications for installed web apps.
-  </p>
-</div>
+  {# ---- Notifications -------------------------------------------------- #}
+  <div class="card card--cyan">
+    <h3>Morning notification</h3>
+    <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
+      One notification a day with tomorrow's verdict — so most mornings you don't
+      have to open anything at all.
+    </p>
 
-<div class="card card--purple" style="margin-top:var(--sp-6)">
-  <h3 style="margin-bottom:var(--sp-2)">Your account</h3>
-  <p style="margin:0;font-size:var(--text-sm)">
-    {{ current_user.email }}
-    {% if current_user.student_number %}
-      · student <span class="mono">{{ current_user.student_number }}</span>
-      {% if current_user.roll_no %}· roll <span class="mono">{{ current_user.roll_no }}</span>{% endif %}
-    {% endif %}
-  </p>
+    <div class="row" style="margin-bottom:var(--sp-3)">
+      <label class="toggle">
+        <input type="checkbox" id="push-toggle"
+               data-configured="{{ '1' if push_configured else '0' }}"
+               data-key="{{ push_public_key or '' }}"
+               {% if settings.notify_enabled and push_devices %}checked{% endif %}>
+        <span class="toggle__track"></span>
+      </label>
+      <span id="push-status" class="text-muted" style="font-size:var(--text-sm)">
+        {% if settings.notify_enabled and push_devices %}
+          On — {{ push_devices }} {{ 'device' if push_devices == 1 else 'devices' }} registered.
+        {% else %}
+          Off.
+        {% endif %}
+      </span>
+      <button class="btn btn--sm" id="push-test" type="button"
+              {% if not (settings.notify_enabled and push_devices) %}hidden{% endif %}>
+        Send a test
+      </button>
+    </div>
+
+    <form method="post" class="row" style="align-items:flex-end;gap:var(--sp-3)">
+      <div class="field" style="margin:0;max-width:160px">
+        <label for="notify_hour">Send at</label>
+        <input class="input input--mono {% if errors.notify_hour %}is-error{% endif %}"
+               id="notify_hour" name="notify_hour" inputmode="numeric"
+               value="{{ settings.notify_hour }}">
+        {% if errors.notify_hour %}
+          <div class="field__error">{{ errors.notify_hour }}</div>
+        {% else %}
+          <div class="field__hint">Hour of the day, 0–23.</div>
+        {% endif %}
+      </div>
+      <input type="hidden" name="only_notify_hour" value="1">
+      <button class="btn btn--sm" type="submit">Save time</button>
+    </form>
+
+    <p class="text-muted" style="font-size:var(--text-sm);margin-bottom:0">
+      On iPhone, add Bunkr to your home screen first — iOS only allows
+      notifications for installed web apps.
+    </p>
+  </div>
+
+  {# ---- Danger zone ---------------------------------------------------- #}
+  <div class="card" style="background:var(--danger-soft)">
+    <h3>Delete this account</h3>
+    <p style="font-size:var(--text-sm);margin-top:0">
+      Removes your ledger, your uploaded PDFs and your settings. This can't be
+      undone, and Bunkr keeps no backup of your account once it's gone.
+    </p>
+    <form method="post" action="{{ url_for('account.delete') }}">
+      <div class="field" style="max-width:320px">
+        <label for="password">Confirm with your password</label>
+        <input class="input" id="password" name="password" type="password" required>
+      </div>
+      <button class="btn btn--danger" type="submit">Delete everything</button>
+    </form>
+  </div>
+
 </div>
 {% endblock %}

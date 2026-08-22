@@ -1,10 +1,11 @@
-"""Multiple accounts on one Bunkmate.
+"""Multiple accounts on one Bunkr.
 
 Isolation was asserted from Phase 1, so the new ground here is everything that
 only becomes a question with a second person: who may create an account, whose
 identity a report claims, what a shared device does, and whether leaving takes
 your data with you.
 """
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -12,7 +13,6 @@ import pytest
 
 from app import create_app, db
 from app.models import (
-    Invite,
     LectureInstance,
     PushSubscription,
     ReportSnapshot,
@@ -42,20 +42,12 @@ def app(tmp_path):
         db.drop_all()
 
 
-@pytest.fixture()
-def invite_app(tmp_path):
-    app = make_app(tmp_path, REGISTRATION="invite")
-    yield app
-    with app.app_context():
-        db.session.remove()
-        db.drop_all()
-
-
-def register(client, email, password="password123", invite=None):
-    data = {"email": email, "password": password}
-    if invite:
-        data["invite"] = invite
-    return client.post("/register", data=data)
+def register(client, email, password="password123", username=None):
+    handle = username or re.sub(r"[^A-Za-z0-9_.]", "", email.split("@")[0]).ljust(3, "x")
+    return client.post("/register", data={
+        "email": email, "username": handle,
+        "password": password, "confirm_password": password,
+    })
 
 
 def upload(client, path=GOLDEN):
@@ -66,115 +58,66 @@ def upload(client, path=GOLDEN):
     )
 
 
-class TestRegistrationGating:
-    def test_first_account_needs_no_invite(self, invite_app):
-        client = invite_app.test_client()
-        assert register(client, "owner@example.com").status_code == 302
-        with invite_app.app_context():
-            assert db.session.query(User).count() == 1
+class TestRegistration:
+    """Open registration: email, username, and a password typed twice."""
 
-    def test_second_account_is_refused_without_a_code(self, invite_app):
-        first = invite_app.test_client()
-        register(first, "owner@example.com")
+    def test_signing_up_creates_the_account(self, app):
+        client = app.test_client()
+        assert register(client, "aditi@example.com").status_code == 302
+        with app.app_context():
+            user = db.session.query(User).one()
+            assert (user.email, user.username) == ("aditi@example.com", "aditi")
 
-        second = invite_app.test_client()
-        resp = register(second, "friend@example.com")
-
+    def test_password_must_be_confirmed(self, app):
+        client = app.test_client()
+        resp = client.post("/register", data={
+            "email": "a@example.com", "username": "aditi",
+            "password": "password123", "confirm_password": "password124",
+        })
         assert resp.status_code == 400
-        assert "invite code" in resp.get_data(as_text=True).lower()
-        with invite_app.app_context():
-            assert db.session.query(User).count() == 1
+        assert "match" in resp.get_data(as_text=True)
+        with app.app_context():
+            assert db.session.query(User).count() == 0
 
-    def test_a_valid_code_lets_a_friend_in_and_is_then_spent(self, invite_app):
-        owner = invite_app.test_client()
-        register(owner, "owner@example.com")
-        owner.post("/account/invites", data={"note": "Aditi"})
+    def test_username_is_required_and_validated(self, app):
+        client = app.test_client()
+        for bad in ("", "ab", "no spaces", "way" + "y" * 40, "bad/slash"):
+            resp = client.post("/register", data={
+                "email": f"x{len(bad)}@example.com", "username": bad,
+                "password": "password123", "confirm_password": "password123",
+            })
+            assert resp.status_code == 400, f"{bad!r} should be refused"
+        with app.app_context():
+            assert db.session.query(User).count() == 0
 
-        with invite_app.app_context():
-            code = db.session.query(Invite).one().code
-
-        friend = invite_app.test_client()
-        assert register(friend, "friend@example.com", invite=code).status_code == 302
-
-        with invite_app.app_context():
-            invite = db.session.query(Invite).one()
-            assert invite.is_used
-            assert invite.used_by_id == 2
-
-        # The same code cannot be reused.
-        third = invite_app.test_client()
-        assert register(third, "third@example.com", invite=code).status_code == 400
-        with invite_app.app_context():
-            assert db.session.query(User).count() == 2
-
-    def test_revoking_an_unused_invite_kills_it(self, invite_app):
-        owner = invite_app.test_client()
-        register(owner, "owner@example.com")
-        owner.post("/account/invites", data={})
-        with invite_app.app_context():
-            invite = db.session.query(Invite).one()
-            code, invite_id = invite.code, invite.id
-
-        owner.post(f"/account/invites/{invite_id}/revoke")
-        friend = invite_app.test_client()
-        assert register(friend, "friend@example.com", invite=code).status_code == 400
-
-    def test_you_cannot_revoke_someone_elses_invite(self, invite_app):
-        owner = invite_app.test_client()
-        register(owner, "owner@example.com")
-        owner.post("/account/invites", data={})
-        with invite_app.app_context():
-            invite_id = db.session.query(Invite).one().id
-            code = db.session.query(Invite).one().code
-
-        friend = invite_app.test_client()
-        register(friend, "friend@example.com", invite=code)
-        friend.post(f"/account/invites/{invite_id}/revoke")
-
-        with invite_app.app_context():
-            assert db.session.query(Invite).count() == 1
-
-    def test_closed_registration_turns_everyone_away(self, tmp_path):
-        app = make_app(tmp_path, REGISTRATION="closed")
+    def test_usernames_are_unique_case_insensitively(self, app):
         first = app.test_client()
-        register(first, "owner@example.com")          # bootstrap still allowed
+        register(first, "one@example.com", username="Aditi")
 
         second = app.test_client()
-        resp = register(second, "friend@example.com")
-        assert resp.status_code == 403
-        assert "Not taking new accounts" in resp.get_data(as_text=True)
+        resp = second.post("/register", data={
+            "email": "two@example.com", "username": "aditi",
+            "password": "password123", "confirm_password": "password123",
+        })
+        assert resp.status_code == 400
+        assert "taken" in resp.get_data(as_text=True)
 
-    def test_a_spent_invite_stays_spent_after_that_account_is_deleted(self, invite_app):
-        """Deleting the invited account clears the reference on the invite —
-        that must not turn a used code back into a free way in."""
-        owner = invite_app.test_client()
-        register(owner, "owner@example.com")
-        owner.post("/account/invites", data={})
-        with invite_app.app_context():
-            code = db.session.query(Invite).one().code
+    def test_you_can_sign_in_with_the_username(self, app):
+        client = app.test_client()
+        register(client, "aditi@example.com", username="aditi")
+        client.post("/logout")
 
-        friend = invite_app.test_client()
-        register(friend, "friend@example.com", invite=code)
-        friend.post("/account/delete", data={"password": "password123"})
+        resp = client.post("/login", data={"email": "aditi", "password": "password123"})
+        assert resp.status_code == 302
+        assert client.get("/").status_code == 200
 
-        with invite_app.app_context():
-            invite = db.session.query(Invite).one()
-            assert invite.used_by_id is None      # the person is gone…
-            assert invite.is_used                 # …but the code is still spent
-
-        stranger = invite_app.test_client()
-        assert register(stranger, "stranger@example.com", invite=code).status_code == 400
-
-    def test_invite_limit_is_enforced(self, invite_app):
-        from app.account import INVITE_LIMIT
-
-        owner = invite_app.test_client()
-        register(owner, "owner@example.com")
-        for _ in range(INVITE_LIMIT + 3):
-            owner.post("/account/invites", data={})
-
-        with invite_app.app_context():
-            assert db.session.query(Invite).count() == INVITE_LIMIT
+    def test_no_invite_code_is_needed(self, app):
+        """Registration is open — several accounts, no codes anywhere."""
+        for i in range(3):
+            client = app.test_client()
+            assert register(client, f"student{i}@example.com").status_code == 302
+        with app.app_context():
+            assert db.session.query(User).count() == 3
 
 
 class TestLoginLockout:
@@ -230,8 +173,10 @@ class TestLoginLockout:
         fake = client.post("/login", data={"email": "ghost@example.com", "password": "nope1234"})
 
         assert real.status_code == fake.status_code == 401
-        assert "Email or password is wrong." in real.get_data(as_text=True)
-        assert "Email or password is wrong." in fake.get_data(as_text=True)
+        # Substring avoids the apostrophe, which Jinja escapes to &#39;.
+        message = "match an account"
+        assert message in real.get_data(as_text=True)
+        assert message in fake.get_data(as_text=True)
 
     def test_login_will_not_bounce_you_off_site(self, app):
         client = app.test_client()
@@ -239,7 +184,7 @@ class TestLoginLockout:
         client.post("/logout")
 
         resp = client.post("/login?next=https://evil.example.com/steal",
-                           data={"email": "m@example.com", "password": "password123"})
+                           data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         assert resp.headers["Location"] == "/"
 
 
@@ -319,36 +264,6 @@ class TestSharedDevice:
             db.drop_all()
 
 
-class TestExport:
-    def test_export_contains_the_whole_account(self, app):
-        client = app.test_client()
-        register(client, "m@example.com")
-        upload(client)
-
-        resp = client.get("/account/export")
-        assert resp.status_code == 200
-        assert "attachment" in resp.headers["Content-Disposition"]
-
-        data = resp.get_json(force=True)
-        assert data["profile"]["student_number"] == "60004250098"
-        assert len(data["lectures"]) == 126
-        assert len(data["subjects"]) == 14
-        assert len(data["reports"]) == 1
-        assert data["settings"]["overall_limit"] == 75
-
-    def test_export_is_scoped_to_you(self, app):
-        first = app.test_client()
-        register(first, "a@example.com")
-        upload(first)
-
-        second = app.test_client()
-        register(second, "b@example.com")
-        data = second.get("/account/export").get_json(force=True)
-
-        assert data["lectures"] == []
-        assert data["profile"]["email"] == "b@example.com"
-
-
 class TestDeletion:
     def test_deleting_removes_everything_and_leaves_others_alone(self, app):
         keeper = app.test_client()
@@ -412,6 +327,46 @@ class TestDeletion:
             assert violations == []
 
 
+class TestSettingsIsOnePage:
+    def test_account_url_redirects_into_settings(self, app):
+        client = app.test_client()
+        register(client, "m@example.com")
+        resp = client.get("/account/")
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/settings")
+
+    def test_settings_holds_profile_notifications_and_deletion(self, app):
+        client = app.test_client()
+        register(client, "m@example.com")
+        html = client.get("/settings").get_data(as_text=True)
+
+        for section in ("Profile", "Attendance limits", "Morning notification",
+                        "Delete this account"):
+            assert section in html, f"{section} missing from Settings"
+        assert "Take your data" not in html          # export is gone
+        assert "Invite" not in html                  # so are invites
+
+    def test_username_can_be_changed_from_settings(self, app):
+        client = app.test_client()
+        register(client, "m@example.com", username="before")
+        client.post("/account/profile", data={"username": "after", "name": "Mokssha"})
+
+        with app.app_context():
+            user = db.session.query(User).one()
+            assert (user.username, user.name) == ("after", "Mokssha")
+
+    def test_a_taken_username_is_refused_on_edit(self, app):
+        first = app.test_client()
+        register(first, "one@example.com", username="taken")
+        second = app.test_client()
+        register(second, "two@example.com", username="mine")
+
+        second.post("/account/profile", data={"username": "taken", "name": ""})
+        with app.app_context():
+            user = db.session.query(User).filter_by(email="two@example.com").one()
+            assert user.username == "mine"
+
+
 class TestIsolationAcrossPhase2And3:
     def test_a_second_user_sees_none_of_the_first_users_planning(self, app):
         first = app.test_client()
@@ -428,6 +383,7 @@ class TestIsolationAcrossPhase2And3:
 
     def test_account_pages_need_a_session(self, app):
         anon = app.test_client()
-        for path in ("/account/", "/account/export"):
-            assert anon.get(path).status_code == 302
+        assert anon.get("/account/").status_code == 302
+        assert anon.get("/settings").status_code == 302
         assert anon.post("/account/delete", data={}).status_code == 302
+        assert anon.post("/account/profile", data={}).status_code == 302

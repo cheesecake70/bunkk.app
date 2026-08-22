@@ -1,4 +1,4 @@
-"""Configuration objects. Select with BUNKMATE_CONFIG env var."""
+"""Configuration objects. Select with BUNKR_CONFIG env var."""
 import os
 
 BASEDIR = os.path.abspath(os.path.dirname(__file__))
@@ -11,14 +11,9 @@ DEV_SECRET_KEY = "dev-only-change-me"
 
 class BaseConfig:
     SECRET_KEY = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
-
-    #: invite  — existing users hand out codes (the first account is free)
-    #: open    — anyone with the URL can sign up
-    #: closed  — no new accounts at all
-    REGISTRATION = os.environ.get("BUNKMATE_REGISTRATION", "invite")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_DIR = os.environ.get(
-        "BUNKMATE_UPLOAD_DIR", os.path.join(BASEDIR, "instance", "uploads")
+        "BUNKR_UPLOAD_DIR", os.path.join(BASEDIR, "instance", "uploads")
     )
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5 MB — reports are ~25-400 KB
 
@@ -32,21 +27,19 @@ class BaseConfig:
 class DevConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", "sqlite:///" + os.path.join(BASEDIR, "instance", "bunkmate.db")
+        "DATABASE_URL", "sqlite:///" + os.path.join(BASEDIR, "instance", "bunkr.db")
     )
 
 
 class TestConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"  # in-memory
-    # Tests create users freely; invite gating has its own dedicated tests.
-    REGISTRATION = "open"
 
 
 class ProdConfig(BaseConfig):
     DEBUG = False
     SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", "sqlite:///" + os.path.join(BASEDIR, "instance", "bunkmate.db")
+        "DATABASE_URL", "sqlite:///" + os.path.join(BASEDIR, "instance", "bunkr.db")
     )
     # Self-hosted deployment: gunicorn behind nginx/Caddy with HTTPS.
     SESSION_COOKIE_SECURE = True

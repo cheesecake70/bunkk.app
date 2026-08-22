@@ -179,11 +179,6 @@ class TestWallet:
         assert all(s.budget == 0 for s in w.subjects)
         assert all(s.verdict is not Verdict.SAFE for s in w.subjects)
 
-    def test_tightest_subject_is_named(self):
-        rows = [subject_row(1, "Roomy", present=20, absent=0, remaining=10),
-                subject_row(2, "Tight", present=7, absent=3, remaining=2)]
-        assert build_wallet(rows, 70).tightest.code == "Tight"
-
     @given(
         present=st.integers(0, 60), absent=st.integers(0, 60),
         unknown=st.integers(0, 20), unreported=st.integers(0, 20),

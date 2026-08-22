@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  var WEEKDAYS = window.BUNKMATE_WEEKDAYS || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  var WEEKDAYS = window.BUNKR_WEEKDAYS || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   function nextKind(current) {
     if (!current) return "holiday";

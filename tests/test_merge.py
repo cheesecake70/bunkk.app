@@ -47,7 +47,7 @@ def app(tmp_path):
 
 @pytest.fixture()
 def user(app):
-    user = User(email="m@example.com")
+    user = User(email="m@example.com", username="mokssha")
     user.set_password("x")
     db.session.add(user)
     db.session.commit()
@@ -156,7 +156,7 @@ class TestRealPdfEndToEnd:
         assert ledger == expected
 
     def test_rejects_another_students_report(self, app):
-        other = User(email="other@example.com", student_number="99999999999")
+        other = User(email="other@example.com", username="other", student_number="99999999999")
         other.set_password("x")
         db.session.add(other)
         db.session.commit()

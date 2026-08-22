@@ -3,6 +3,7 @@
 Includes the isolation checks that make the multi-tenant schema real rather
 than aspirational (ADR-5) — one user must never see another's ledger.
 """
+import re
 from datetime import date, time
 from pathlib import Path
 
@@ -41,9 +42,12 @@ def client(app):
     return app.test_client()
 
 
-def register(client, email="m@example.com", password="password123"):
-    return client.post("/register", data={"email": email, "password": password},
-                       follow_redirects=False)
+def register(client, email="m@example.com", password="password123", username=None):
+    handle = username or re.sub(r"[^A-Za-z0-9_.]", "", email.split("@")[0]).ljust(3, "x")
+    return client.post("/register", data={
+        "email": email, "username": handle,
+        "password": password, "confirm_password": password,
+    }, follow_redirects=False)
 
 
 def upload(client, path=GOLDEN, filename="report.pdf"):
@@ -68,7 +72,7 @@ class TestAuth:
     def test_register_rejects_a_duplicate_email(self, client):
         register(client)
         client.post("/logout")
-        resp = client.post("/register", data={"email": "m@example.com", "password": "password123"})
+        resp = client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
         assert resp.status_code == 400
         assert b"already has an account" in resp.data
 

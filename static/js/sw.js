@@ -1,4 +1,4 @@
-/* Bunkmate service worker — served from / so its scope covers the whole app.
+/* Bunkr service worker — served from / so its scope covers the whole app.
  *
  * Caching policy is deliberately narrow: static assets only. Pages are never
  * cached, because every page in this app contains one student's attendance and
@@ -10,7 +10,7 @@
 /* Bump on every change to the shell files below, or browsers keep serving the
    old cached copies — a stale /offline showed an out-of-date nav for exactly
    this reason. Activation deletes caches under any other name. */
-const VERSION = "bunkmate-v2";
+const VERSION = "bunkr-v2";
 const SHELL = [
   "/offline",
   "/static/css/tokens.css",
@@ -76,15 +76,15 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch (e) {
-    payload = { title: "Bunkmate", body: event.data ? event.data.text() : "" };
+    payload = { title: "Bunkr", body: event.data ? event.data.text() : "" };
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || "Bunkmate", {
+    self.registration.showNotification(payload.title || "Bunkr", {
       body: payload.body || "",
       icon: "/static/icons/icon-192.png",
       badge: "/static/icons/icon-192.png",
-      tag: payload.tag || "bunkmate",
+      tag: payload.tag || "bunkr",
       renotify: true,
       data: { url: payload.url || "/" }
     })

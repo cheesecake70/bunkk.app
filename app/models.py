@@ -30,6 +30,8 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    #: Chosen at sign-up; how you're known in the app.
+    username = db.Column(db.String(32), unique=True, nullable=False, index=True)
     name = db.Column(db.String(120))
     #: Claimed from the first uploaded report. Unique: one student, one account —
     #: otherwise two people could ingest the same report and diverge. NULL until
@@ -49,33 +51,6 @@ class User(UserMixin, db.Model):
 
     def check_password(self, raw: str) -> bool:
         return check_password_hash(self.password_hash, raw)
-
-
-class Invite(db.Model):
-    """How a friend gets an account on a self-hosted box.
-
-    Registration is invite-only by default, so leaving the app on a public URL
-    doesn't mean handing accounts to strangers. The very first account needs no
-    code — someone has to be able to start.
-    """
-
-    id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(32), unique=True, nullable=False, index=True)
-    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
-    note = db.Column(db.String(120))
-    used_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    used_at = db.Column(db.DateTime)
-
-    created_by = db.relationship("User", foreign_keys=[created_by_id])
-    used_by = db.relationship("User", foreign_keys=[used_by_id])
-
-    @property
-    def is_used(self) -> bool:
-        # Keyed on the timestamp, not the user: when an invited person deletes
-        # their account their id is cleared, and a spent code must not come back
-        # to life as a free way in.
-        return self.used_at is not None
 
 
 class Settings(db.Model):
