@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Today · Bunkr{% endblock %}
+
+{% block content %}
+{% if not has_data %}
+  {# First run: there is exactly one thing to do, so show exactly one thing. #}
+  <div class="card empty">
+    <h2>No report yet</h2>
+    <p class="text-muted" style="max-width:420px;margin:0 auto var(--sp-5)">
+      Export the <strong>detailed</strong> attendance report from the portal —
+      semester start to today — and drop it in. Bunkr does the rest.
+    </p>
+    <a class="btn btn--primary btn--lg" href="{{ url_for('core.upload') }}">Upload your PDF</a>
+  </div>
+{% else %}
+
+{% set is_today = focus == today %}
+{% set is_past = focus < today %}
+
+<div class="page-head">
+  <div class="eyebrow">Can I skip?</div>
+  <h1>{{ 'Today' if is_today else focus.strftime('%A') }}</h1>
+  <p class="page-head__sub">
+    <span class="mono">{{ focus|full_date }}</span>
+    {% if windows and windows.remaining_to %}
+      · counting to
+      {% if windows.horizon_is_checkpoint %}
+        <strong>{{ windows.checkpoint_label or 'your next checkpoint' }}</strong>,
+        <span class="mono">{{ windows.checkpoint|long_date }}</span>
+      {% else %}
+        <strong>semester end</strong>, <span class="mono">{{ windows.semester_end|long_date }}</span>
+      {% endif %}
+    {% endif %}
+  </p>
+</div>
+
+{# ---- Week arrows: this week only. Anything further out is a plan, not a day. #}
+<div class="week-nav" style="margin-bottom:var(--sp-5)">
+  {% set idx = week.index(focus) %}
+  {% if idx > 0 %}
+    <a class="btn btn--sm btn--ghost week-nav__arrow" rel="prev"
+       href="{{ url_for('core.dashboard', date=week[idx - 1].isoformat()) }}"
+       aria-label="Previous day">&larr;</a>
+  {% else %}
+    <span class="btn btn--sm btn--ghost week-nav__arrow" aria-disabled="true" style="opacity:.4">&larr;</span>
+  {% endif %}
+
+  <div class="week-nav__days">
+    {% for d in week %}
+      <a class="week-nav__day {% if d == focus %}is-focus{% endif %} {% if d == today %}is-today{% endif %}"
+         href="{{ url_for('core.dashboard', date=d.isoformat()) }}">
+        <span class="week-nav__dow">{{ d.strftime('%a') }}</span>
+        <span class="week-nav__date mono">{{ d.day }}</span>
+      </a>
+    {% endfor %}
+  </div>
+
+  {% if idx < 6 %}
+    <a class="btn btn--sm btn--ghost week-nav__arrow" rel="next"
+       href="{{ url_for('core.dashboard', date=week[idx + 1].isoformat()) }}"
+       aria-label="Next day">&rarr;</a>
+  {% else %}
+    <span class="btn btn--sm btn--ghost week-nav__arrow" aria-disabled="true" style="opacity:.4">&rarr;</span>
+  {% endif %}
+</div>
+
+{% if advanced_ready %}
+  {% if day %}
+    <div class="hero-verdict hero-verdict--{{ day.verdict.value }}">
+      <div class="hero-verdict__label">{{ 'Today' if is_today else focus.strftime('%A %d %b') }}</div>
+      <div class="hero-verdict__word">{{ day.verdict|verdict_word|upper }}</div>
+      <div class="hero-verdict__reason">{{ day.reason }}</div>
+    </div>
+
+    {% if is_past %}
+      <div class="banner banner--info" style="margin-bottom:var(--sp-5)">
+        <div class="banner__body">
+          <div class="banner__text">
+            This day has already happened — the verdict is what it would have been.
+            Whether you actually went shows up once the college marks it.
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if day.lectures %}
+      {# One toggle for the whole day, so "I'm not going in at all" is one tap
+         rather than one per class. It writes the same whole-day absence the
+         calendar's day sheet does, and owns every lecture below while it's on. #}
+      <div class="row--between" style="margin:var(--sp-7) 0 var(--sp-4)">
+        <h2 class="section-title" style="margin:0">
+          {{ day.lectures|length }} {{ 'class' if day.lectures|length == 1 else 'classes' }}
+        </h2>
+        {% if not is_past %}
+          <button class="btn btn--sm {% if whole_day %}btn--danger{% endif %} js-skip-day"
+                  data-date="{{ focus.isoformat() }}"
+                  {% if whole_day %}data-absence-id="{{ whole_day.id }}"{% endif %}
+                  >{{ 'Skipping all day' if whole_day else 'Skip whole day' }}</button>
+        {% endif %}
+      </div>
+      <div class="stack" style="margin-bottom:var(--sp-6)">
+        {% for lecture in day.lectures %}
+          {% set plan = subjects_by_id.get(lecture.subject_id) %}
+          {% set key = (lecture.subject_id, lecture.start_time.strftime('%H:%M')) %}
+          {% set absence_id = whole_day.id if whole_day else planned.get(key) %}
+          <div class="lecture {% if absence_id %}is-planned{% endif %}">
+            <div>
+              <span class="mono">{{ lecture.start_time|clock }}–{{ lecture.end_time|clock }}</span>
+              <a class="lecture__subject"
+                 href="{{ url_for('core.subject_detail', subject_id=lecture.subject_id) }}">{{ lecture.code }}</a>
+            </div>
+            <div class="row" style="gap:var(--sp-2)">
+              {% if plan %}
+                <span class="badge badge--{{ plan.verdict.value }}">
+                  {{ plan.budget }} left
+                </span>
+              {% endif %}
+              {% if not is_past %}
+                {# A whole-day plan owns every lecture on the day, so while one is
+                   on these are frozen; undo it with the toggle above. #}
+                <button class="btn btn--sm {% if absence_id %}btn--danger{% endif %} js-skip-lecture"
+                        data-date="{{ focus.isoformat() }}"
+                        data-subject="{{ lecture.subject_id }}"
+                        data-start="{{ lecture.start_time.isoformat() }}"
+                        data-code="{{ lecture.code }}"
+                        {% if absence_id %}data-absence-id="{{ absence_id }}"{% endif %}
+                        {# Kept apart from the id above so lifting a whole-day
+                           plan can restore each lecture's own state. #}
+                        data-own-absence="{{ planned.get(key) or '' }}"
+                        {% if whole_day %}disabled title="The whole day is planned off"{% endif %}
+                        >{{ 'Skipping' if absence_id else 'Skip this' }}</button>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-muted" style="margin-bottom:var(--sp-6)">Nothing scheduled.</p>
+    {% endif %}
+  {% else %}
+    <div class="card empty" style="margin-bottom:var(--sp-6)">
+      <h2>No classes</h2>
+      <p class="text-muted" style="margin:0">Your timetable has nothing on this day.</p>
+    </div>
+  {% endif %}
+
+  {# Budgets and planned totals live on /plan. What stays here is the one thing
+     that explains a wrong-looking number today: lectures the college hasn't
+     reported yet, all of which currently count against you. #}
+  {% if wallet.overall_unreported %}
+    <div class="grid-stats">
+      <div class="stat stat--warn">
+        <div class="stat__label">Held since your last report</div>
+        <div class="stat__value num">{{ wallet.overall_unreported }}</div>
+        <div class="stat__meta">counted as missed until you upload</div>
+      </div>
+    </div>
+  {% endif %}
+{% else %}
+  <div class="card card--purple" style="margin-bottom:var(--sp-6)">
+    <div class="row--between">
+      <div>
+        <h3 style="margin-bottom:var(--sp-2)">Turn on skip verdicts</h3>
+        <p class="text-muted" style="margin:0;font-size:var(--text-sm)">
+          {% if next_step == 'timetable' %}
+            Bunkr can already see your weekly pattern in the reports — confirm it and
+            it can count exactly how many lectures are left.
+          {% else %}
+            One date left: when does the semester end?
+          {% endif %}
+        </p>
+      </div>
+      {% if next_step == 'timetable' %}
+        <a class="btn btn--accent" href="{{ url_for('core.timetable') }}">Confirm timetable</a>
+      {% else %}
+        <a class="btn btn--accent" href="{{ url_for('core.calendar') }}">Set end date</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <p class="text-muted">
+    <a href="{{ url_for('core.plan') }}">See your overall attendance &rarr;</a>
+  </p>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/today.js') }}"></script>
+{% endblock %}

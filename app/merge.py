@@ -21,7 +21,6 @@ import difflib
 import hashlib
 import json
 import os
-import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 
@@ -251,8 +250,6 @@ def _check_identity(user: User, report: ParsedReport) -> None:
         # First upload claims the identity printed on the report.
         user.student_number = header.student_number
         user.roll_no = header.roll_no
-        if not user.name:
-            user.name = header.student_name.title()
 
 
 def _store_pdf(user: User, data: bytes, digest: str, filename: str | None) -> str:

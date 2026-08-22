@@ -27,6 +27,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field, replace
 from datetime import date, time
+from fractions import Fraction
 
 from .budget import WARN_MARGIN, ratio
 from .types import Counts, Verdict
@@ -40,6 +41,21 @@ class DayVerdict(str, enum.Enum):
 
 
 @dataclass(frozen=True)
+class BreakSpan:
+    """A free period between two lectures.
+
+    Carries no attendance weight — it never reaches the budget maths. It exists
+    so that "when could I leave?" is answered in hours off, not lectures
+    skipped: leaving at noon when the next class is at one buys the noon hour
+    too, and a search that counts only lectures cannot see that.
+    """
+
+    start_time: time
+    end_time: time
+    label: str | None = None
+
+
+@dataclass(frozen=True)
 class PlannedLecture:
     """One projected future lecture."""
 
@@ -48,6 +64,10 @@ class PlannedLecture:
     on_date: date
     start_time: time
     end_time: time
+    #: True when an absence is already committed against this lecture. Its cost
+    #: has already been taken out of the wallet, so the day verdict must not
+    #: charge for it a second time.
+    planned: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,6 +110,18 @@ class Wallet:
     def by_id(self) -> dict[int, SubjectPlan]:
         return {s.subject_id: s for s in self.subjects}
 
+    @property
+    def overall_projected_total(self) -> int:
+        return (self.overall_counts.total + self.overall_unreported
+                + self.overall_remaining)
+
+    @property
+    def overall_projected_worst_pct(self) -> Fraction | None:
+        """Mirrors SubjectPlan.projected_worst_pct, for the whole ledger."""
+        attended = (self.overall_counts.present + self.overall_remaining
+                    - self.overall_planned)
+        return ratio(attended, self.overall_projected_total)
+
 
 @dataclass(frozen=True)
 class DayPlan:
@@ -102,6 +134,14 @@ class DayPlan:
     #: Earliest lecture you could arrive for and still be within budget.
     arrive_at: time | None = None
     skippable_codes: list[str] = field(default_factory=list)
+    #: Wall-clock minutes the cut frees up, breaks included. This is what
+    #: ranks the options: two cuts that skip the same lectures are not worth
+    #: the same if one of them also gets you out before an hour of nothing.
+    freed_minutes: int = 0
+    #: Name of a break inside the freed window, when there is one to name.
+    covers_break: str | None = None
+    #: The lectures the winning cut actually skips, in clock order.
+    skippable: list[PlannedLecture] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +249,7 @@ def day_plans(
     days: dict[date, list[PlannedLecture]],
     wallet: Wallet,
     horizon: list[date],
+    breaks: dict[date, list[BreakSpan]] | None = None,
 ) -> list[DayPlan]:
     """Verdict per upcoming day.
 
@@ -218,45 +259,85 @@ def day_plans(
     one, and it re-derives the whole wallet.
     """
     budgets = {s.subject_id: s.budget for s in wallet.subjects}
+    breaks = breaks or {}
     return [
-        _day_plan(day, days.get(day, []), budgets, wallet.overall_budget)
+        _day_plan(day, days.get(day, []), budgets, wallet.overall_budget,
+                  breaks.get(day, []))
         for day in horizon
     ]
 
 
 def _day_plan(day: date, lectures: list[PlannedLecture],
-              budgets: dict[int, int], overall_budget: int) -> DayPlan:
+              budgets: dict[int, int], overall_budget: int,
+              day_breaks: list[BreakSpan] | None = None) -> DayPlan:
     if not lectures:
         return DayPlan(on_date=day, lectures=[], verdict=DayVerdict.OFF,
                        reason="No classes scheduled.")
 
     ordered = sorted(lectures, key=lambda l: l.start_time)
+    day_breaks = day_breaks or []
 
-    if _fits(ordered, budgets, overall_budget):
+    # Lectures you have already committed to missing are spent: the wallet
+    # deducted them the moment you committed. Only what is still undecided is
+    # worth asking about — judging the committed ones again charges the budget
+    # twice, which is why a day written off in full used to come back as "part
+    # skip", advice about a decision already made.
+    pending = [l for l in ordered if not l.planned]
+    if not pending:
         return DayPlan(
             on_date=day, lectures=ordered, verdict=DayVerdict.SKIP,
-            reason=_cost_sentence(ordered) + " — all within budget.",
+            reason="Already planning to miss " + _cost_sentence(ordered) + ".",
             skippable_codes=sorted({l.code for l in ordered}),
+            skippable=ordered,
+            freed_minutes=_span(_day_start(ordered, day_breaks),
+                                _day_end(ordered, day_breaks)),
         )
 
-    # Longest skippable suffix -> "leave after X"; longest prefix -> "arrive at Y".
-    leave_after = arrive_at = None
-    best_suffix: list[PlannedLecture] = []
-    for cut in range(len(ordered)):
-        if _fits(ordered[cut:], budgets, overall_budget):
-            best_suffix = ordered[cut:]
-            leave_after = ordered[cut - 1].end_time if cut > 0 else None
-            break
+    if _fits(pending, budgets, overall_budget):
+        return DayPlan(
+            on_date=day, lectures=ordered, verdict=DayVerdict.SKIP,
+            reason=_cost_sentence(pending) + " — all within budget.",
+            skippable_codes=sorted({l.code for l in pending}),
+            skippable=pending,
+            freed_minutes=_span(_day_start(ordered, day_breaks),
+                                _day_end(ordered, day_breaks)),
+        )
 
-    best_prefix: list[PlannedLecture] = []
-    for cut in range(len(ordered), 0, -1):
-        if _fits(ordered[:cut], budgets, overall_budget):
-            best_prefix = ordered[:cut]
-            arrive_at = ordered[cut].start_time if cut < len(ordered) else None
-            break
+    # Every cut that fits, scored by the wall-clock it frees rather than the
+    # lectures it skips. That is what makes leaving before a break beat leaving
+    # after one: the break falls inside the freed window and counts.
+    starts_at = _day_start(ordered, day_breaks)
+    ends_at = _day_end(ordered, day_breaks)
+    options: list[_Cut] = []
 
-    if not best_suffix and not best_prefix:
-        blockers = sorted({l.code for l in ordered if budgets.get(l.subject_id, 0) <= 0})
+    # Cuts walk the undecided lectures: a class you already wrote off is not one
+    # you stay for, nor one you come in at.
+    for cut in range(len(pending)):                     # skip the tail
+        skipped = pending[cut:]
+        if not _fits(skipped, budgets, overall_budget):
+            continue
+        boundary = pending[cut - 1].end_time if cut > 0 else starts_at
+        options.append(_Cut(
+            leave_after=(pending[cut - 1].end_time if cut > 0 else None),
+            arrive_at=None,
+            skipped=skipped,
+            freed=_span(boundary, ends_at),
+        ))
+
+    for cut in range(len(pending), 0, -1):              # skip the head
+        skipped = pending[:cut]
+        if not _fits(skipped, budgets, overall_budget):
+            continue
+        boundary = pending[cut].start_time if cut < len(pending) else ends_at
+        options.append(_Cut(
+            leave_after=None,
+            arrive_at=(pending[cut].start_time if cut < len(pending) else None),
+            skipped=skipped,
+            freed=_span(starts_at, boundary),
+        ))
+
+    if not options:
+        blockers = sorted({l.code for l in pending if budgets.get(l.subject_id, 0) <= 0})
         reason = (
             "No room left in " + ", ".join(blockers) + "."
             if blockers else "Skipping any of it would break a limit."
@@ -264,19 +345,92 @@ def _day_plan(day: date, lectures: list[PlannedLecture],
         return DayPlan(on_date=day, lectures=ordered, verdict=DayVerdict.GO,
                        reason=reason)
 
-    skippable = best_suffix if len(best_suffix) >= len(best_prefix) else best_prefix
-    if leave_after is not None:
-        reason = f"Leave after {leave_after:%H:%M} — skips {_cost_sentence(best_suffix)}."
-    elif arrive_at is not None:
-        reason = f"Arrive by {arrive_at:%H:%M} — skips {_cost_sentence(best_prefix)}."
-    else:
-        reason = "Part of the day is skippable."
+    # Most time off first; between equal windows, the one that costs fewer
+    # attendance marks; and leaving early over arriving late, which is the
+    # easier of the two to actually do.
+    best = max(options, key=lambda c: (c.freed, -len(c.skipped),
+                                       c.leave_after is not None))
+
+    covered = _break_in(day_breaks, best, starts_at, ends_at)
+    reason = _partial_sentence(best, covered)
 
     return DayPlan(
         on_date=day, lectures=ordered, verdict=DayVerdict.PARTIAL, reason=reason,
-        leave_after=leave_after, arrive_at=arrive_at,
-        skippable_codes=sorted({l.code for l in skippable}),
+        leave_after=best.leave_after, arrive_at=best.arrive_at,
+        skippable_codes=sorted({l.code for l in best.skipped}),
+        skippable=best.skipped,
+        freed_minutes=best.freed,
+        covers_break=covered,
     )
+
+
+@dataclass(frozen=True)
+class _Cut:
+    """One way of doing part of the day."""
+
+    leave_after: time | None
+    arrive_at: time | None
+    skipped: list[PlannedLecture]
+    freed: int
+
+
+def _minutes(value: time) -> int:
+    return value.hour * 60 + value.minute
+
+
+def _span(start: time, end: time) -> int:
+    return max(0, _minutes(end) - _minutes(start))
+
+
+def _day_start(lectures: list[PlannedLecture], breaks: list[BreakSpan]) -> time:
+    return min([l.start_time for l in lectures] + [b.start_time for b in breaks])
+
+
+def _day_end(lectures: list[PlannedLecture], breaks: list[BreakSpan]) -> time:
+    return max([l.end_time for l in lectures] + [b.end_time for b in breaks])
+
+
+def _break_in(breaks: list[BreakSpan], cut: _Cut, starts_at: time,
+              ends_at: time) -> str | None:
+    """The break the freed window swallows, if it swallows one worth naming."""
+    if cut.leave_after is not None:
+        window = (cut.leave_after, ends_at)
+    elif cut.arrive_at is not None:
+        window = (starts_at, cut.arrive_at)
+    else:
+        window = (starts_at, ends_at)
+
+    inside = [
+        b for b in breaks
+        if b.start_time >= window[0] and b.end_time <= window[1]
+    ]
+    if not inside:
+        return None
+    longest = max(inside, key=lambda b: _span(b.start_time, b.end_time))
+    return longest.label or "the break"
+
+
+def _hours(minutes: int) -> str:
+    if minutes >= 60 and minutes % 60 == 0:
+        hours = minutes // 60
+        return f"{hours}h"
+    if minutes >= 60:
+        return f"{minutes // 60}h{minutes % 60:02d}"
+    return f"{minutes}m"
+
+
+def _partial_sentence(cut: _Cut, covered: str | None) -> str:
+    cost = _cost_sentence(cut.skipped)
+    if cut.leave_after is not None:
+        head = f"Leave after {cut.leave_after:%H:%M} — skips {cost}"
+    elif cut.arrive_at is not None:
+        head = f"Arrive by {cut.arrive_at:%H:%M} — skips {cost}"
+    else:
+        head = f"Part of the day is skippable — {cost}"
+
+    if covered:
+        head += f" and {covered}"
+    return f"{head}. {_hours(cut.freed)} free."
 
 
 def _fits(lectures: list[PlannedLecture], budgets: dict[int, int],
@@ -332,3 +486,85 @@ def simulate(rows: list[dict], overall_limit: int) -> SimulationResult:
         < overall_limit * grand_total
     )
     return SimulationResult(wallet=wallet, breaks=breaks, overall_breaks=overall_breaks)
+
+
+# ---------------------------------------------------------------------------
+# The skip ladder
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LadderRung:
+    """What skipping `n` more lectures of one subject costs."""
+
+    n: int
+    subject_pct: Fraction | None
+    subject_verdict: Verdict
+    subject_budget_left: int
+    overall_pct: Fraction | None
+    overall_verdict: Verdict
+    #: Subjects this rung breaks that were NOT already broken before it. A
+    #: student who is under water everywhere would otherwise see the same ten
+    #: codes against every rung, which says nothing about the choice in front
+    #: of them.
+    breaks: tuple[str, ...]
+    #: True when this rung breaks nothing that wasn't already broken.
+    is_safe: bool
+
+
+def skip_ladder(rows: list[dict], overall_limit: int, subject_id: int,
+                max_n: int | None = None) -> list[LadderRung]:
+    """For n = 1..K, where skipping n more lectures of `subject_id` lands you.
+
+    Counted, not dated. The wallet has no date dimension — `planned_absences`
+    is an integer — so "which three lectures" cannot change the answer, and
+    resolving concrete dates only to count them again would be a lossy
+    round-trip. Callers that need to *store* the result resolve dates
+    separately; the arithmetic never depends on them.
+
+    `rows` is the shape `build_wallet` takes, and is never mutated.
+    """
+    row = next((r for r in rows if r["id"] == subject_id), None)
+    if row is None:
+        return []
+
+    headroom = row["remaining"] - row["planned_absences"]
+    if headroom <= 0:
+        return []
+
+    if max_n is None:
+        # Show the cliff plus a step past it. A ladder long enough to reach the
+        # end of term is unreadable, and the only interesting rung is the first
+        # unsafe one — but the cap has to live here, or the `min(planned,
+        # remaining)` clamp downstream would flatten the top rungs silently.
+        budget = build_wallet(rows, overall_limit).by_id().get(subject_id)
+        max_n = max((budget.budget if budget else 0) + 2, 5)
+    limit = min(headroom, max_n, 10)
+
+    # What is already broken before this decision, so each rung can report the
+    # cost of itself rather than the state of the world.
+    baseline = simulate(rows, overall_limit)
+    already_broken = set(baseline.breaks)
+
+    rungs = []
+    for n in range(1, limit + 1):
+        shifted = [
+            {**r, "planned_absences": r["planned_absences"] + n}
+            if r["id"] == subject_id else r
+            for r in rows
+        ]
+        result = simulate(shifted, overall_limit)
+        plan = result.wallet.by_id()[subject_id]
+        new_breaks = tuple(c for c in result.breaks if c not in already_broken)
+        newly_overall = result.overall_breaks and not baseline.overall_breaks
+        rungs.append(LadderRung(
+            n=n,
+            subject_pct=plan.projected_worst_pct,
+            subject_verdict=plan.verdict,
+            subject_budget_left=plan.budget,
+            overall_pct=result.wallet.overall_projected_worst_pct,
+            overall_verdict=result.wallet.overall_verdict,
+            breaks=new_breaks,
+            is_safe=not new_breaks and not newly_overall,
+        ))
+    return rungs

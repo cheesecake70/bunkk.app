@@ -18,9 +18,8 @@
     return node;
   }
 
-  function banner(kind, icon, title, text) {
+  function banner(kind, title, text) {
     var wrap = el("div", "banner" + (kind ? " banner--" + kind : ""));
-    wrap.appendChild(el("div", "banner__icon", icon));
     var body = el("div", "banner__body");
     body.appendChild(el("div", "banner__title", title));
     if (text) body.appendChild(el("div", "banner__text", text));
@@ -56,18 +55,18 @@
     } else {
       headline = "Nothing new — your ledger was already up to date";
     }
-    result.appendChild(banner("success", "✓", "Report merged", headline));
+    result.appendChild(banner("success", "Report merged", headline));
 
     if (data.new_subjects && data.new_subjects.length) {
       result.appendChild(
-        banner("info", "✨", plural(data.new_subjects.length, "new subject"),
+        banner("info", plural(data.new_subjects.length, "new subject"),
                data.new_subjects.join(" · "))
       );
     }
 
     if (data.vanished && data.vanished.length) {
       result.appendChild(
-        banner("", "👻", plural(data.vanished.length, "lecture") + " disappeared from the portal",
+        banner("", plural(data.vanished.length, "lecture") + " disappeared from the portal",
                "Kept in your history, left out of your totals.")
       );
     }
@@ -130,7 +129,7 @@
 
   function renderProposals(data) {
     result.innerHTML = "";
-    result.appendChild(banner("info", "❓", "One quick question",
+    result.appendChild(banner("info", "One quick question",
       "A course name changed. Tell Bunkr once and it will remember forever."));
 
     var card = el("div", "card");
@@ -173,7 +172,7 @@
     var confirm = el("button", "btn btn--accent", "Save and merge");
     confirm.addEventListener("click", function () {
       if (Object.keys(answers).length < data.proposals.length) {
-        alert("Answer each question first.");
+        window.BunkrToast.error("Answer each question first.");
         return;
       }
       confirm.classList.add("is-loading");
@@ -183,7 +182,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decisions: answers })
       })
-        .then(readJson)
+        .then(window.BunkrApi.readJson)
         .then(function (res) {
           if (!res.ok) { showError(res.body.error || "Something went wrong."); return; }
           renderDiff(res.body);
@@ -196,23 +195,7 @@
 
   function showError(message) {
     result.innerHTML = "";
-    result.appendChild(banner("danger", "⚠️", "Upload failed", message));
-  }
-
-  /* A crashed server answers with an HTML error page, not JSON. Say that
-     plainly instead of blaming the network, which sends people to the wrong
-     fix entirely. */
-  function readJson(response) {
-    return response.text().then(function (text) {
-      try {
-        return { ok: response.ok, body: JSON.parse(text) };
-      } catch (e) {
-        return {
-          ok: false,
-          body: { error: "The server hit an unexpected error (" + response.status + ")." }
-        };
-      }
-    });
+    result.appendChild(banner("danger", "Upload failed", message));
   }
 
   /* ---- upload -------------------------------------------------------------- */
@@ -221,18 +204,18 @@
     if (!file) return;
     hint.textContent = file.name;
     result.innerHTML = "";
-    result.appendChild(banner("info", "⏳", "Reading your report…", file.name));
+    result.appendChild(banner("info", "Reading your report…", file.name));
 
     var form = new FormData();
     form.append("report", file);
 
     fetch("/api/reports", { method: "POST", body: form })
-      .then(readJson)
+      .then(window.BunkrApi.readJson)
       .then(function (res) {
         if (!res.ok) { showError(res.body.error || "Something went wrong."); return; }
         if (res.body.status === "duplicate") {
           result.innerHTML = "";
-          result.appendChild(banner("info", "👍", "Nothing new",
+          result.appendChild(banner("info", "Nothing new",
             "You've already uploaded this exact file — your numbers are unchanged."));
           return;
         }

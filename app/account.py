@@ -15,12 +15,13 @@ from flask_login import current_user, login_required, logout_user
 from . import db
 from .auth import normalise_username, validate_username
 from .models import (
+    Checkpoint,
     CourseAlias,
     Holiday,
     LectureChange,
     LectureInstance,
+    LecturePrediction,
     PlannedAbsence,
-    PushSubscription,
     ReportSnapshot,
     Semester,
     Settings,
@@ -44,20 +45,14 @@ def index():
 @login_required
 def update_profile():
     username = normalise_username(request.form.get("username"))
-    name = (request.form.get("name") or "").strip()
 
     if username and username.lower() != (current_user.username or "").lower():
         error = validate_username(username)
         if error:
-            flash(error)
+            flash(error, "error")
             return redirect(url_for("core.settings"))
         current_user.username = username
 
-    if len(name) > 120:
-        flash("That name is too long.")
-        return redirect(url_for("core.settings"))
-
-    current_user.name = name or None
     db.session.commit()
     flash("Profile saved.")
     return redirect(url_for("core.settings"))
@@ -69,7 +64,7 @@ def delete():
     """Erase the account. Password-confirmed, and it takes the PDFs too."""
     password = request.form.get("password") or ""
     if not current_user.check_password(password):
-        flash("That password doesn't match — nothing was deleted.")
+        flash("That password doesn't match — nothing was deleted.", "error")
         return redirect(url_for("core.settings"))
 
     user_id = current_user.id
@@ -106,6 +101,9 @@ def purge_user(user: User) -> None:
         db.session.query(LectureChange).filter(
             LectureChange.lecture_id.in_(lecture_ids)
         ).delete(synchronize_session=False)
+        db.session.query(LecturePrediction).filter(
+            LecturePrediction.lecture_id.in_(lecture_ids)
+        ).delete(synchronize_session=False)
     if version_ids:
         db.session.query(TimetableSlot).filter(
             TimetableSlot.version_id.in_(version_ids)
@@ -117,9 +115,12 @@ def purge_user(user: User) -> None:
         db.session.query(Holiday).filter(
             Holiday.semester_id.in_(semester_ids)
         ).delete(synchronize_session=False)
+        db.session.query(Checkpoint).filter(
+            Checkpoint.semester_id.in_(semester_ids)
+        ).delete(synchronize_session=False)
 
     for model in (LectureInstance, CourseAlias, PlannedAbsence,
-                  ReportSnapshot, PushSubscription):
+                  ReportSnapshot):
         db.session.query(model).filter_by(user_id=user.id).delete(
             synchronize_session=False
         )

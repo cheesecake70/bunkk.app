@@ -9,7 +9,7 @@ Two halves, both pure:
 
   infer_slots  — ledger rows          -> candidate weekly slots + confidence
   expand       — confirmed slots      -> the actual dates they fall on,
-                                         honouring holidays and swap-days
+                                         honouring holidays
 """
 from __future__ import annotations
 
@@ -58,15 +58,11 @@ class CalendarRules:
     """What the semester calendar says about specific dates."""
 
     holidays: frozenset[date] = frozenset()
-    #: date -> the weekday whose timetable runs that day ("Friday runs Tuesday's")
-    swaps: dict[date, int] | None = None
 
     def weekday_for(self, day: date) -> int | None:
         """The timetable weekday to run on `day`, or None if nothing runs."""
         if day in self.holidays:
             return None
-        if self.swaps and day in self.swaps:
-            return self.swaps[day]
         return day.weekday()
 
 

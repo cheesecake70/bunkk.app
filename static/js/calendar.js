@@ -1,83 +1,107 @@
-/* Semester calendar: tap a day to cycle normal -> holiday -> swap -> normal.
-   A swap needs to know whose timetable runs, so it asks once when chosen. */
+/* The semester calendar.
+
+   Two modes, because the two things you do here have opposite consequences and
+   opposite frequencies. Planning an absence spends budget and happens weekly;
+   marking a holiday removes a day's lectures from the maths entirely and
+   happens a handful of times a term. Sharing one tap between them would make
+   the rare, destructive one the easiest mistake to make.
+
+   The day sheet itself lives in daysheet.js — the plan strip opens the same one. */
 (function () {
   "use strict";
 
-  var WEEKDAYS = window.BUNKR_WEEKDAYS || ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  var modes = document.getElementById("cal-mode");
+  if (!modes) return;
 
-  function nextKind(current) {
-    if (!current) return "holiday";
-    if (current === "holiday") return "swap";
-    return "";                       // back to a normal day
+  var hint = document.getElementById("cal-hint");
+
+  var HINTS = {
+    absence: "Tap a day to see its classes and plan which ones you'll miss.",
+    holiday: "Tap a day to mark it a holiday — its classes stop counting entirely."
+  };
+
+  var mode = window.localStorage.getItem("bunkr.calendar-mode") || "absence";
+
+  function setMode(next) {
+    mode = next;
+    window.localStorage.setItem("bunkr.calendar-mode", next);
+    [].forEach.call(modes.querySelectorAll(".tabs__tab"), function (tab) {
+      tab.setAttribute("aria-selected", String(tab.dataset.mode === next));
+    });
+    hint.textContent = HINTS[next];
   }
 
-  function paint(cell, kind, swapWeekday) {
-    cell.classList.toggle("is-holiday", kind === "holiday");
-    cell.classList.toggle("is-swap", kind === "swap");
-    cell.dataset.kind = kind || "";
-    cell.dataset.swap = (swapWeekday === null || swapWeekday === undefined) ? "" : swapWeekday;
+  setMode(mode);
 
+  modes.addEventListener("click", function (event) {
+    var tab = event.target.closest(".tabs__tab");
+    if (tab) setMode(tab.dataset.mode);
+  });
+
+  /* ---- holidays ---------------------------------------------------------- */
+
+  function paintHoliday(cell, isHoliday) {
+    cell.classList.toggle("is-holiday", isHoliday);
+    cell.dataset.kind = isHoliday ? "holiday" : "";
     var tag = cell.querySelector(".cal__tag");
-    var label = kind === "holiday" ? "off"
-      : kind === "swap" ? WEEKDAYS[swapWeekday]
-      : null;
-
-    if (!label) {
-      if (tag) tag.remove();
-      return;
-    }
-    if (!tag) {
+    if (isHoliday && !tag) {
       tag = document.createElement("span");
       tag.className = "cal__tag";
+      tag.textContent = "off";
       cell.appendChild(tag);
+    } else if (!isHoliday && tag) {
+      tag.remove();
     }
-    tag.textContent = label;
   }
 
-  function askWeekday() {
-    var answer = window.prompt(
-      "Which day's timetable runs?\n0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Sat 6=Sun", "0");
-    if (answer === null) return null;
-    var n = parseInt(answer, 10);
-    return (n >= 0 && n <= 6) ? n : null;
+  function saveHoliday(cell, isHoliday) {
+    cell.disabled = true;
+    return window.BunkrApi
+      .post("/api/calendar/day", {
+        date: cell.dataset.date,
+        kind: isHoliday ? "holiday" : null
+      })
+      .then(function (res) {
+        cell.disabled = false;
+        if (!res.ok) {
+          paintHoliday(cell, !isHoliday);       // put it back
+          window.BunkrToast.error(res.body.error || "Couldn't save that day.");
+          return false;
+        }
+        return true;
+      });
   }
+
+  function toggleHoliday(cell) {
+    if (!cell) return;
+    var was = cell.dataset.kind === "holiday";
+    paintHoliday(cell, !was);                   // taps must feel instant
+    saveHoliday(cell, !was).then(function (ok) {
+      if (!ok) return;
+      window.BunkrToast.show(
+        (was ? "Holiday removed for " : "Holiday added for ") + cell.dataset.date,
+        {
+          onUndo: function () {
+            paintHoliday(cell, was);
+            return saveHoliday(cell, was);
+          }
+        }
+      );
+    });
+  }
+
+  /* ---- one tap, routed by mode ------------------------------------------- */
+
+  var sheet = window.BunkrDaySheet.mount({
+    cellSelector: ".cal__day",
+    countClass: "cal__count mono",
+    onHoliday: toggleHoliday
+  });
 
   document.addEventListener("click", function (event) {
     var cell = event.target.closest(".cal__day");
     if (!cell || cell.classList.contains("is-out") || cell.disabled) return;
-
-    var kind = nextKind(cell.dataset.kind);
-    var swapWeekday = null;
-
-    if (kind === "swap") {
-      swapWeekday = askWeekday();
-      if (swapWeekday === null) { kind = ""; }   // cancelled -> back to normal
-    }
-
-    var previous = { kind: cell.dataset.kind, swap: cell.dataset.swap };
-    paint(cell, kind, swapWeekday);              // optimistic: taps must feel instant
-    cell.disabled = true;
-
-    fetch("/api/calendar/day", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: cell.dataset.date,
-        kind: kind || null,
-        swap_weekday: swapWeekday
-      })
-    })
-      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
-      .then(function (res) {
-        if (!res.ok) {
-          paint(cell, previous.kind, previous.swap === "" ? null : parseInt(previous.swap, 10));
-          alert(res.body.error || "Couldn't save that day.");
-        }
-      })
-      .catch(function () {
-        paint(cell, previous.kind, previous.swap === "" ? null : parseInt(previous.swap, 10));
-        alert("Couldn't reach the server — that day wasn't saved.");
-      })
-      .then(function () { cell.disabled = false; });
+    if (mode === "holiday") toggleHoliday(cell);
+    else sheet.open(cell.dataset.date);
   });
 })();

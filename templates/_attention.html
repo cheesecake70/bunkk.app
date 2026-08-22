@@ -1,0 +1,83 @@
+{# Things that need attention, worst first. Its own file because the
+   attention stack is the one part of the semester view that Today may
+   also want one day — and because plan.html is long enough already. #}
+<div class="stack" style="margin-bottom:var(--sp-6)">
+  {% if true_worst %}
+    {# Guesses move the headline numbers, so the untouched reading has to stay
+       on screen — a wrong guess should be visible, not just wrong. #}
+    <div class="banner banner--info">
+      <div class="banner__body">
+        <div class="banner__title">
+          {{ guess_count }} {{ 'lecture is' if guess_count == 1 else 'lectures are' }}
+          counted from your guesses
+        </div>
+        <div class="banner__text">
+          Every figure below uses them. Ignoring them entirely — the safe
+          reading — you're at
+          <span class="mono">{{ true_worst.overall.worst_pct|percent(0) }}</span>
+          with <span class="mono">{{ true_worst.overall.can_miss }}</span>
+          {{ 'bunk' if true_worst.overall.can_miss == 1 else 'bunks' }} left.
+        </div>
+      </div>
+    </div>
+  {% endif %}
+  {% if coverage.gaps %}
+    <div class="banner">
+      <div class="banner__body">
+        <div class="banner__title">Data incomplete</div>
+        <div class="banner__text">
+          No report covers
+          {% for gap in coverage.gaps %}<span class="range">{{ gap }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+          — export <span class="range">{{ coverage.suggested_export }}</span> from the portal to close it.
+        </div>
+      </div>
+      <a class="btn btn--sm" href="{{ url_for('core.upload') }}">Upload</a>
+    </div>
+  {% endif %}
+
+  {% if coverage.is_stale %}
+    <div class="banner banner--info">
+      <div class="banner__body">
+        <div class="banner__title">{{ coverage.stale_days }} days since your last report</div>
+        <div class="banner__text">
+          Anything after <span class="range">{{ coverage.latest_covered|short_date }}</span>
+          isn't counted yet. Export <span class="range">{{ coverage.suggested_export }}</span> to catch up.
+        </div>
+      </div>
+      <a class="btn btn--sm" href="{{ url_for('core.upload') }}">Upload</a>
+    </div>
+  {% endif %}
+
+  {% if coverage.pending_count %}
+    <div class="banner banner--info">
+      <div class="banner__body">
+        <div class="banner__title">{{ coverage.pending_count }} pending {{ 'lecture' if coverage.pending_count == 1 else 'lectures' }}</div>
+        <div class="banner__text">
+          Not marked by the college yet.
+          {% if guess_count %}
+            {{ guess_count }} of them {{ 'has' if guess_count == 1 else 'have' }} a guess
+            against {{ 'it' if guess_count == 1 else 'them' }}; the rest count as
+            <strong>absent</strong> until they resolve.
+          {% else %}
+            Counted as <strong>absent</strong> until they resolve, so your real budget is
+            probably bigger — open a subject to say what you expect them to be.
+          {% endif %}
+          Oldest is from <span class="range">{{ coverage.oldest_pending|short_date }}</span>.
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if vanished %}
+    <div class="banner">
+      <div class="banner__body">
+        <div class="banner__title">{{ vanished|length }} {{ 'lecture' if vanished|length == 1 else 'lectures' }} disappeared from the portal</div>
+        <div class="banner__text">
+          Recorded once, then missing from a later report covering the same dates —
+          probably cancelled. Left out of your totals, kept in your history.
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+

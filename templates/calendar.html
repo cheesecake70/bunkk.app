@@ -3,11 +3,11 @@
 
 {% block content %}
 <div class="page-head">
-  <div class="eyebrow">Holidays &amp; swap-days</div>
+  <div class="eyebrow">The whole semester</div>
   <h1>Semester calendar</h1>
   <p class="page-head__sub">
-    Tap any future day to cycle it: normal → holiday → swap-day. Bunkr only ever
-    looks forwards, so you never have to fill in the past.
+    Tap any future day to plan around it. Bunkr only ever looks forwards, so you
+    never have to fill in the past.
   </p>
 </div>
 
@@ -18,7 +18,8 @@
       <input class="input input--mono" id="end_date" name="end_date" type="date"
              value="{{ semester_end.isoformat() if semester_end else '' }}" required>
       <div class="field__hint">
-        The one date Bunkr ever asks you for — everything else is inferred.
+        How far Bunkr can plan. Exams before then go on the
+        <a href="{{ url_for('core.checkpoints') }}">checkpoints page</a>.
       </div>
     </div>
     <button class="btn btn--primary" type="submit">
@@ -29,20 +30,32 @@
 
 {% if not has_timetable %}
 <div class="banner" style="margin-bottom:var(--sp-5)">
-  <div class="banner__icon">⚠️</div>
   <div class="banner__body">
     <div class="banner__title">No timetable confirmed yet</div>
-    <div class="banner__text">Holidays only change the maths once Bunkr knows your weekly grid.</div>
+    <div class="banner__text">Days only mean anything once Bunkr knows your weekly grid.</div>
   </div>
-  <a class="btn btn--sm" href="{{ url_for('core.timetable') }}">Confirm it</a>
+  <a class="btn btn--sm" href="{{ url_for('core.timetable') }}">Set it up</a>
 </div>
 {% endif %}
 
-<div class="row" style="margin-bottom:var(--sp-4)">
-  <span class="badge badge--neutral">Normal</span>
-  <span class="badge badge--danger">Holiday · no classes</span>
-  <span class="badge badge--pending">Swap · another day's timetable</span>
+{# Marking a day a holiday removes its lectures from the maths entirely — the
+   most consequential mis-tap in the app — so it takes a deliberate mode switch
+   rather than sharing a tap with the thing you do every week. #}
+<div class="row--between" style="margin-bottom:var(--sp-4);flex-wrap:wrap;gap:var(--sp-3)">
+  <div class="tabs" role="tablist" id="cal-mode">
+    <button class="tabs__tab" type="button" role="tab" data-mode="absence"
+            aria-selected="true">Plan absences</button>
+    <button class="tabs__tab" type="button" role="tab" data-mode="holiday"
+            aria-selected="false">Mark holidays</button>
+  </div>
+  <div class="row" style="gap:var(--sp-2)">
+    <span class="badge badge--danger">Holiday</span>
+    <span class="badge badge--pending">Planned absence</span>
+    <span class="badge badge--warn">Checkpoint</span>
+  </div>
 </div>
+
+<p class="text-muted" style="font-size:var(--text-sm);margin-top:0" id="cal-hint"></p>
 
 {% for month in months %}
 <div class="card" style="margin-bottom:var(--sp-4)">
@@ -57,17 +70,21 @@
           <div class="cal__day is-out"><span class="mono">{{ day.day }}</span></div>
         {% else %}
           {% set holiday = holidays.get(day) %}
+          {% set absences = absence_counts.get(day, 0) %}
+          {% set checkpoint = checkpoints.get(day) %}
           <button type="button"
-                  class="cal__day {% if holiday and holiday.kind == 'holiday' %}is-holiday{% elif holiday %}is-swap{% endif %}"
+                  class="cal__day
+                         {% if holiday %}is-holiday{% endif %}
+                         {% if checkpoint %}is-checkpoint{% endif %}
+                         {% if horizon_to and day > horizon_to %}is-beyond{% endif %}"
                   data-date="{{ day.isoformat() }}"
-                  data-kind="{{ holiday.kind if holiday else '' }}"
-                  data-swap="{{ holiday.swap_weekday if holiday and holiday.swap_weekday is not none else '' }}">
+                  data-kind="{{ 'holiday' if holiday else '' }}"
+                  {% if checkpoint %}
+                    title="{{ checkpoint.label or 'Checkpoint' }}"
+                  {% endif %}>
             <span class="mono">{{ day.day }}</span>
-            {% if holiday and holiday.kind == 'swap' and holiday.swap_weekday is not none %}
-              <span class="cal__tag">{{ weekdays[holiday.swap_weekday] }}</span>
-            {% elif holiday %}
-              <span class="cal__tag">off</span>
-            {% endif %}
+            {% if holiday %}<span class="cal__tag">off</span>{% endif %}
+            {% if absences %}<span class="cal__count mono">{{ absences }}</span>{% endif %}
           </button>
         {% endif %}
       {% endfor %}
@@ -76,14 +93,15 @@
 </div>
 {% endfor %}
 
+{# ---- The day sheet ------------------------------------------------------ #}
+{% with holiday_button = true %}{% include "_day_sheet.html" %}{% endwith %}
+
 <div class="row">
-  <a class="btn btn--primary" href="{{ url_for('core.dashboard') }}">Done</a>
+  <a class="btn btn--primary" href="{{ url_for('core.plan') }}">Back to the plan</a>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-  window.BUNKR_WEEKDAYS = {{ weekdays|tojson }};
-</script>
+<script src="{{ url_for('static', filename='js/daysheet.js') }}"></script>
 <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
 {% endblock %}

@@ -17,12 +17,6 @@ class BaseConfig:
     )
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5 MB — reports are ~25-400 KB
 
-    # Web Push (Phase 3). Absent keys simply disable notifications; everything
-    # else keeps working, so dev and self-hosted prod don't diverge.
-    VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY")
-    VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY")
-    VAPID_CLAIM_EMAIL = os.environ.get("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
-
 
 class DevConfig(BaseConfig):
     DEBUG = True

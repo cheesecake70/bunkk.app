@@ -20,6 +20,30 @@
 .nav__link:hover { background: var(--soft-yellow); }
 .nav__link.is-active { background: var(--ink); color: var(--ink-inverse); }
 
+/* Setup menu. <details> gives the open/close for free; this only positions the
+   panel and hides the default disclosure triangle. */
+.nav__menu { position: relative; }
+.nav__menu > summary { list-style: none; cursor: pointer; user-select: none; }
+.nav__menu > summary::-webkit-details-marker { display: none; }
+.nav__menu > summary::after { content: " \25BE"; }
+.nav__menu-items { position: absolute; top: calc(100% + var(--sp-2)); left: 0;
+  z-index: var(--z-dropdown); min-width: 200px;
+  display: flex; flex-direction: column;
+  background: var(--card); border: var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md); overflow: hidden; }
+.nav__menu-item { padding: var(--sp-3) var(--sp-4); text-decoration: none;
+  color: var(--ink); font-size: var(--text-sm); font-weight: 700;
+  border-bottom: 1.5px dashed var(--ink); }
+.nav__menu-item:last-child { border-bottom: none; }
+.nav__menu-item:hover { background: var(--soft-yellow); }
+
+/* On narrow screens the panel would overflow the viewport, so it becomes part
+   of the flow instead of floating over the page. */
+@media (max-width: 639px) {
+  .nav__menu[open] { width: 100%; }
+  .nav__menu-items { position: static; margin-top: var(--sp-2); }
+}
+
 /* ---- Page head ------------------------------------------------------------ */
 .page-head { margin-bottom: var(--sp-6); }
 .page-head h1 { margin-bottom: var(--sp-2); }
@@ -65,6 +89,13 @@
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-muted);
 }
 .lecture.is-vanished { opacity: 0.6; }
+/* A planned lecture is struck through rather than recoloured, matching the day
+   strip: the row still has to read as a class that exists. */
+.lecture.is-planned .lecture__subject { text-decoration: line-through; }
+.lecture.is-planned { opacity: .75; }
+.lecture__subject { font-weight: 700; margin-left: var(--sp-3);
+  color: var(--ink); text-decoration: none; }
+.lecture__subject:hover { text-decoration: underline; }
 
 /* ---- Snapshot timeline ------------------------------------------------------ */
 .timeline { display: grid; gap: var(--sp-4); }
@@ -76,7 +107,6 @@
 
 /* ---- Empty state ------------------------------------------------------------ */
 .empty { text-align: center; padding: var(--sp-7) var(--sp-5); }
-.empty__icon { font-size: 56px; line-height: 1; }
 .empty h2 { font-family: var(--font-display); margin: var(--sp-4) 0 var(--sp-2); }
 
 /* ---- Upload flow ------------------------------------------------------------ */
@@ -112,7 +142,6 @@
 .cal__day:hover:not(.is-out) { transform: translate(-2px, -2px); box-shadow: var(--shadow-md); }
 .cal__day:active:not(.is-out) { transform: translate(2px, 2px); box-shadow: none; }
 .cal__day.is-holiday { background: var(--danger-fill); }
-.cal__day.is-swap    { background: var(--pending-soft); }
 .cal__day.is-out {
   background: var(--paper); color: var(--ink-muted); cursor: default;
   box-shadow: none; border-style: dashed; opacity: 0.55;
@@ -165,3 +194,191 @@
   /* The subject table drops its least-load-bearing columns before it scrolls. */
   .subjects .col-optional { display: none; }
 }
+
+
+/* ---- Today: the week navigator ------------------------------------------ */
+.week-nav { display: flex; align-items: stretch; gap: var(--sp-2); }
+/* min-width:0 lets the grid shrink below its content width instead of pushing
+   the "next" arrow off the side of a phone. */
+.week-nav__days { display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: var(--sp-2); flex: 1; min-width: 0; }
+.week-nav__day { display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: var(--sp-2) 0; text-decoration: none; color: var(--ink);
+  background: var(--card); border: var(--border); border-radius: var(--radius-sm); }
+.week-nav__day:hover { background: var(--soft-yellow); }
+.week-nav__dow { font-family: var(--font-label); font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps); }
+.week-nav__date { font-size: var(--text-lg); font-weight: 700; }
+/* Today gets an outline, the focused day gets the fill — so when they differ
+   you can still see where "now" is. */
+.week-nav__day.is-today { box-shadow: var(--shadow-sm); }
+.week-nav__day.is-focus { background: var(--ink); color: var(--ink-inverse); }
+.week-nav__day.is-focus:hover { background: var(--ink); }
+
+/* On a phone the arrows cost more width than they earn: every day in the row
+   is already a tap target, which is the faster gesture there anyway. */
+@media (max-width: 520px) {
+  .week-nav__arrow { display: none; }
+  .week-nav__days { gap: var(--sp-1); }
+  .week-nav__date { font-size: var(--text-base); }
+}
+
+/* ---- Subjects editor ---------------------------------------------------- */
+.subject-edit { display: grid; gap: var(--sp-3);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 100px; align-items: start; }
+@media (max-width: 639px) {
+  .subject-edit { grid-template-columns: 1fr; }
+}
+
+/* Six rotating tints. A subject list is a list of distinct things, and reading
+   it as one white ribbon is why nobody could find the row they meant to edit. */
+.card--tint-1 { background: var(--soft-yellow); }
+.card--tint-2 { background: var(--soft-purple); }
+.card--tint-3 { background: var(--soft-cyan); }
+.card--tint-4 { background: var(--soft-green); }
+.card--tint-5 { background: var(--soft-pink); }
+.card--tint-6 { background: var(--soft-orange); }
+/* The fields stay on paper inside a tinted card, or the tint fights the text
+   you are trying to type. */
+.card[class*="card--tint-"] .input { background: var(--card); }
+
+/* ---- Setup hub ---------------------------------------------------------- */
+.setup-grid { display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.setup-tile { display: block; text-decoration: none; color: inherit;
+  border: var(--border); border-radius: var(--radius-sm); padding: var(--sp-4);
+  box-shadow: var(--shadow-sm); transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease); }
+.setup-tile:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-md); }
+.setup-tile:active { transform: translate(2px, 2px); box-shadow: none; }
+.setup-tile__title { font-weight: 800; margin-bottom: var(--sp-1); }
+.setup-tile__note { font-size: var(--text-sm); color: var(--ink-muted); }
+
+
+/* ---- Timetable grid ----------------------------------------------------- */
+.tt { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--sp-2); align-items: start; }
+.tt__col { display: flex; flex-direction: column; gap: var(--sp-2);
+  background: var(--card); border: var(--border); border-radius: var(--radius-sm);
+  padding: var(--sp-2); min-height: 120px; }
+.tt__dow { font-family: var(--font-label); font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps); text-align: center; }
+.tt__blocks { display: flex; flex-direction: column; gap: var(--sp-2); flex: 1; }
+.tt__block { display: flex; flex-direction: column; gap: 2px; cursor: pointer;
+  border: var(--border); border-radius: var(--radius-sm);
+  background: var(--soft-yellow); padding: var(--sp-2);
+  box-shadow: var(--shadow-sm); transition: transform var(--dur-fast) var(--ease); }
+.tt__block:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-md); }
+/* A break is visibly not a class: dashed, muted, and it carries no budget. */
+.tt__block--break { background: transparent; border-style: dashed;
+  box-shadow: none; color: var(--ink-muted); }
+.tt__block--break:hover { transform: none; box-shadow: none; background: var(--paper); }
+/* A line break is legal after the en dash, which used to split 08:00–09:00
+   across two lines whenever a column got narrow. It never should. */
+.tt__time { font-size: var(--text-xs); white-space: nowrap; }
+.tt__name { font-weight: 700; font-size: var(--text-sm); word-break: break-word; }
+.tt__add { font-family: var(--font-label); font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps);
+  background: transparent; border: 1.5px dashed var(--ink); color: var(--ink-muted);
+  border-radius: var(--radius-sm); padding: var(--sp-2); cursor: pointer; }
+.tt__add:hover { background: var(--soft-yellow); color: var(--ink); }
+/* Stands in for the Save button once the editor saves on its own. Quiet by
+   design — it reports, it doesn't ask. */
+.tt-status { font-family: var(--font-label); font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps);
+  color: var(--ink-muted); }
+.tt-status[data-state="saving"] { color: var(--ink); }
+.tt-status[data-state="error"] { color: var(--danger-deep); }
+
+/* Seven columns stop being readable well before phone width — and below about
+   1000px a column is narrower than the time range it has to hold, so drop to
+   two before that rather than squeezing. */
+@media (max-width: 1000px) {
+  .tt { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .tt { grid-template-columns: 1fr; }
+}
+
+/* <dialog> centres itself but needs its backdrop and margins set. */
+dialog.modal { margin: auto; }
+dialog.modal::backdrop { background: rgba(17, 17, 17, .45); }
+
+
+/* ---- Plan: month headings, planned days, the skip ladder ---------------- */
+.strip-month { font-size: var(--text-base); margin: var(--sp-5) 0 var(--sp-2); }
+.day-strip .verdict { cursor: pointer; font: inherit; text-align: center; }
+.day-strip .verdict:disabled { cursor: default; opacity: .65; }
+.day-strip .verdict:not(:disabled):hover { transform: translate(-2px, -2px); }
+/* A planned day is struck through rather than recoloured: the verdict colour
+   still has to say whether the day was safe to skip in the first place. */
+.verdict.is-planned { outline: 3px solid var(--ink); outline-offset: 2px; }
+.verdict.is-planned .verdict__date { text-decoration: line-through; }
+/* How much of the day is already spoken for. A day is rarely all-or-nothing
+   once single classes can be planned, so this is a count, not a tick. */
+.verdict { position: relative; }
+.verdict__count {
+  position: absolute; top: -8px; right: -8px;
+  min-width: 20px; height: 20px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--pending-fill); color: var(--ink);
+  border: var(--bw) solid var(--ink); border-radius: var(--radius-pill);
+  font-size: 10px; font-weight: 700; line-height: 1;
+}
+
+.ladder { display: flex; flex-direction: column; gap: var(--sp-2);
+  margin: var(--sp-3) 0; }
+.ladder__rung { display: grid; grid-template-columns: 44px 80px 1fr;
+  align-items: center; gap: var(--sp-3);
+  border: var(--border); border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3); background: var(--card); }
+.ladder__rung--safe   { background: var(--safe-soft); }
+.ladder__rung--warn   { background: var(--warn-soft); }
+.ladder__rung--danger { background: var(--danger-soft); }
+.ladder__n { font-family: var(--font-display); font-size: var(--text-lg); }
+.ladder__pct { font-weight: 700; }
+.ladder__note { font-size: var(--text-sm); }
+
+
+/* ---- Calendar: absence counts, checkpoints, the horizon edge ------------ */
+.cal__day { position: relative; }
+.cal__count { position: absolute; top: 2px; right: 3px;
+  font-size: var(--text-xs); font-weight: 700; line-height: 1;
+  background: var(--pending-fill); color: var(--ink);
+  border: 1.5px solid var(--ink); border-radius: var(--radius-pill);
+  padding: 1px 5px; }
+/* A checkpoint is a deadline, not a state of the day, so it marks the edge
+   rather than filling the cell — the fill still has to mean holiday. */
+.cal__day.is-checkpoint { border-left: 5px solid var(--warn-fill); }
+/* Past the horizon the day is still tappable; it just isn't spending from the
+   budget currently on screen. */
+.cal__day.is-beyond { opacity: .7; }
+
+#day-sheet { min-width: min(420px, 92vw); }
+#day-sheet .lecture { cursor: pointer; }
+#day-sheet .lecture .mono { white-space: nowrap; }
+/* A break is in the list so the day reads like the day; it has nothing to tick,
+   so it must not look like it does. */
+#day-sheet .lecture--break { cursor: default; opacity: .7;
+  border-style: dashed; background: transparent; }
+/* The recommended half-day, offered as one tap above the boxes it would tick. */
+.sheet-partial { display: flex; flex-direction: column; gap: var(--sp-2);
+  align-items: flex-start; margin-bottom: var(--sp-4); padding: var(--sp-3);
+  background: var(--soft-cyan); border: var(--border);
+  border-radius: var(--radius-sm); }
+.sheet-partial__note { font-size: var(--text-sm); }
+
+
+/* ---- Guessing an unmarked lecture --------------------------------------- */
+.guess { display: inline-flex; border: var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--card); }
+.guess__btn { font-family: var(--font-label); font-size: var(--text-xs);
+  text-transform: uppercase; letter-spacing: var(--tracking-label);
+  padding: var(--sp-1) var(--sp-3); cursor: pointer; background: transparent;
+  border: none; border-right: var(--bw) solid var(--ink); color: var(--ink-muted); }
+.guess__btn:last-child { border-right: none; }
+.guess__btn:hover:not(:disabled) { background: var(--soft-yellow); color: var(--ink); }
+.guess__btn:disabled { opacity: .5; cursor: default; }
+/* A guess is purple everywhere, matching the pending colour it replaces —
+   never green or red, which are reserved for what the college actually said. */
+.guess__btn[aria-pressed="true"] { background: var(--pending-fill); color: var(--ink); }

@@ -20,8 +20,10 @@ from .budget import (
 )
 from .coverage import CoverageReport, DateRange, analyse, find_gaps, merge_ranges
 from .plan import (
+    BreakSpan,
     DayPlan,
     DayVerdict,
+    LadderRung,
     PlannedLecture,
     SimulationResult,
     SubjectPlan,
@@ -29,6 +31,7 @@ from .plan import (
     build_wallet,
     day_plans,
     simulate,
+    skip_ladder,
 )
 from .timetable import (
     CONFIDENT_WEEKS,
@@ -71,6 +74,7 @@ __all__ = [
     "expand",
     "infer_slots",
     # planning (Phase 2)
+    "BreakSpan",
     "DayPlan",
     "DayVerdict",
     "PlannedLecture",
@@ -80,6 +84,8 @@ __all__ = [
     "build_wallet",
     "day_plans",
     "simulate",
+    "skip_ladder",
+    "LadderRung",
     # types
     "Counts",
     "Dashboard",

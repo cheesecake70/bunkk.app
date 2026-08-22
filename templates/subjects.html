@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Subjects · Bunkr{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="eyebrow">Names, short codes, limits</div>
+  <h1>Subjects</h1>
+  <p class="page-head__sub">
+    Bunkr names these from whatever the portal printed, which is rarely what you
+    call them. Rename them here — it only changes what you see, never how a
+    future report is matched.
+  </p>
+</div>
+
+{% if not subjects %}
+  <div class="card empty">
+    <h2>No subjects yet</h2>
+    <p class="text-muted" style="margin:0 auto var(--sp-5)">
+      They appear once you upload a report.
+    </p>
+    <a class="btn btn--primary" href="{{ url_for('core.upload') }}">Upload your PDF</a>
+  </div>
+{% else %}
+<form method="post">
+  <div class="stack">
+    {% for subject in subjects %}
+      {# Six rotating tints so a long list reads as a list of distinct things
+         rather than one long white ribbon. #}
+      <div class="card card--tint-{{ loop.index0 % 6 + 1 }} js-subject"
+           data-subject-id="{{ subject.id }}">
+        <div class="row--between" style="margin-bottom:var(--sp-3)">
+          <span class="badge badge--type-{{ subject.lecture_type|lower }}">{{ subject.lecture_type }}</span>
+          <div class="row" style="gap:var(--sp-2)">
+            {# Revealed by js/subjects.js the moment this card is edited, so a
+               change never depends on scrolling to the bottom of the page. #}
+            <button class="btn btn--sm btn--primary js-save" type="button" hidden>Save</button>
+            <a class="btn btn--sm btn--ghost"
+               href="{{ url_for('core.subject_detail', subject_id=subject.id) }}">Overview</a>
+          </div>
+        </div>
+
+        <div class="subject-edit">
+          <div class="field" style="margin:0">
+            <label for="name_{{ subject.id }}">Name</label>
+            <input class="input {% if errors['name_' ~ subject.id] %}is-error{% endif %}"
+                   id="name_{{ subject.id }}" name="name_{{ subject.id }}"
+                   data-field="name" value="{{ subject.canonical_name }}" maxlength="200">
+            <div class="field__error" {% if not errors['name_' ~ subject.id] %}hidden{% endif %}
+                 data-error-for="name">{{ errors['name_' ~ subject.id] }}</div>
+          </div>
+
+          <div class="field" style="margin:0">
+            <label for="code_{{ subject.id }}">Short code</label>
+            <input class="input input--mono {% if errors['code_' ~ subject.id] %}is-error{% endif %}"
+                   id="code_{{ subject.id }}" name="code_{{ subject.id }}"
+                   data-field="code" value="{{ subject.code }}" maxlength="20">
+            <div class="field__error" {% if not errors['code_' ~ subject.id] %}hidden{% endif %}
+                 data-error-for="code">{{ errors['code_' ~ subject.id] }}</div>
+          </div>
+
+          <div class="field" style="margin:0">
+            <label for="custom_limit_{{ subject.id }}">Limit %</label>
+            <input class="input input--mono {% if errors['custom_limit_' ~ subject.id] %}is-error{% endif %}"
+                   id="custom_limit_{{ subject.id }}" name="custom_limit_{{ subject.id }}"
+                   data-field="custom_limit"
+                   inputmode="numeric" placeholder="{{ settings.subject_limit }}"
+                   value="{{ subject.custom_limit if subject.custom_limit is not none else '' }}">
+            <div class="field__error" {% if not errors['custom_limit_' ~ subject.id] %}hidden{% endif %}
+                 data-error-for="custom_limit">{{ errors['custom_limit_' ~ subject.id] }}</div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="row" style="margin-top:var(--sp-5)">
+    <button class="btn btn--primary" type="submit">Save subjects</button>
+    <a class="btn btn--ghost" href="{{ url_for('core.settings') }}">Cancel</a>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/subjects.js') }}"></script>
+{% endblock %}

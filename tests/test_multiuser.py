@@ -14,7 +14,6 @@ import pytest
 from app import create_app, db
 from app.models import (
     LectureInstance,
-    PushSubscription,
     ReportSnapshot,
     Semester,
     Settings,
@@ -241,27 +240,6 @@ class TestIdentityClaiming:
             assert db.session.query(LectureInstance).filter_by(user_id=2).count() == 1
 
 
-class TestSharedDevice:
-    def test_a_push_endpoint_follows_whoever_signed_in_last(self, tmp_path):
-        app = make_app(tmp_path, VAPID_PUBLIC_KEY="pub", VAPID_PRIVATE_KEY="priv",
-                       VAPID_CLAIM_EMAIL="mailto:t@example.com")
-        payload = {"endpoint": "https://push.example.com/shared",
-                   "keys": {"p256dh": "k", "auth": "a"}}
-
-        first = app.test_client()
-        register(first, "a@example.com")
-        first.post("/api/push/subscribe", json=payload)
-
-        second = app.test_client()
-        register(second, "b@example.com")
-        second.post("/api/push/subscribe", json=payload)
-
-        with app.app_context():
-            rows = db.session.query(PushSubscription).all()
-            assert len(rows) == 1
-            assert rows[0].user_id == 2       # never both
-            db.session.remove()
-            db.drop_all()
 
 
 class TestDeletion:
@@ -335,25 +313,37 @@ class TestSettingsIsOnePage:
         assert resp.status_code == 302
         assert resp.headers["Location"].endswith("/settings")
 
-    def test_settings_holds_profile_notifications_and_deletion(self, app):
+    def test_settings_holds_profile_limits_and_deletion(self, app):
         client = app.test_client()
         register(client, "m@example.com")
         html = client.get("/settings").get_data(as_text=True)
 
-        for section in ("Profile", "Attendance limits", "Morning notification",
-                        "Delete this account"):
+        for section in ("Profile", "Attendance limits", "Delete this account"):
             assert section in html, f"{section} missing from Settings"
         assert "Take your data" not in html          # export is gone
         assert "Invite" not in html                  # so are invites
+        assert "notification" not in html.lower()    # and so are notifications
 
     def test_username_can_be_changed_from_settings(self, app):
         client = app.test_client()
         register(client, "m@example.com", username="before")
-        client.post("/account/profile", data={"username": "after", "name": "Mokssha"})
+        client.post("/account/profile", data={"username": "after"})
 
         with app.app_context():
-            user = db.session.query(User).one()
-            assert (user.username, user.name) == ("after", "Mokssha")
+            assert db.session.query(User).one().username == "after"
+
+    def test_there_is_no_display_name_to_set(self, app):
+        """One name per account. A second one nothing ever rendered was a field
+        to keep in step with nothing on the other end of it."""
+        client = app.test_client()
+        register(client, "m@example.com", username="solo")
+
+        html = client.get("/settings").get_data(as_text=True)
+        assert "Display name" not in html
+
+        client.post("/account/profile", data={"username": "solo", "name": "Mokssha"})
+        with app.app_context():
+            assert not hasattr(db.session.query(User).one(), "name")
 
     def test_a_taken_username_is_refused_on_edit(self, app):
         first = app.test_client()
@@ -361,7 +351,7 @@ class TestSettingsIsOnePage:
         second = app.test_client()
         register(second, "two@example.com", username="mine")
 
-        second.post("/account/profile", data={"username": "taken", "name": ""})
+        second.post("/account/profile", data={"username": "taken"})
         with app.app_context():
             user = db.session.query(User).filter_by(email="two@example.com").one()
             assert user.username == "mine"

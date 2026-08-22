@@ -12,6 +12,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from attendance_engine import (
+    BreakSpan,
     CalendarRules,
     Counts,
     DayVerdict,
@@ -25,6 +26,7 @@ from attendance_engine import (
     expand,
     infer_slots,
     simulate,
+    skip_ladder,
 )
 from report_parser import parse_pdf
 
@@ -102,12 +104,6 @@ class TestExpand:
         rules = CalendarRules(holidays=frozenset({date(2026, 8, 17)}))
         occ = expand(self.slots, date(2026, 8, 17), date(2026, 8, 23), rules)
         assert count_by_subject(occ) == {2: 1}
-
-    def test_a_swap_day_runs_another_weekdays_timetable(self):
-        """Friday running Monday's timetable is a real college habit."""
-        rules = CalendarRules(swaps={date(2026, 8, 21): MON})
-        occ = expand(self.slots, date(2026, 8, 21), date(2026, 8, 21), rules)
-        assert count_by_subject(occ) == {1: 1}
 
     def test_empty_range_is_empty(self):
         assert expand(self.slots, date(2026, 9, 1), date(2026, 8, 1)) == []
@@ -203,8 +199,9 @@ class TestWallet:
 # ---------------------------------------------------------------------------
 
 
-def lecture(code, sid, hour, day=date(2026, 8, 17)):
-    return PlannedLecture(sid, code, day, time(hour, 0), time(hour + 1, 0))
+def lecture(code, sid, hour, day=date(2026, 8, 17), planned=False):
+    return PlannedLecture(sid, code, day, time(hour, 0), time(hour + 1, 0),
+                          planned=planned)
 
 
 class TestDayVerdicts:
@@ -245,6 +242,99 @@ class TestDayVerdicts:
         assert plans[0].verdict is DayVerdict.PARTIAL
         assert plans[0].leave_after == time(10, 0)
         assert "Leave after 10:00" in plans[0].reason
+
+    def test_a_fully_committed_day_reads_as_skipped(self):
+        """The wallet already paid for those lectures when they were committed;
+        asking it to pay again turned a settled day back into "part skip"."""
+        w = self._wallet({"CN": 0}, 0)          # budget spent on this very day
+        day = date(2026, 8, 17)
+        plans = day_plans(
+            {day: [lecture("CN", 1, 9, planned=True),
+                   lecture("CN", 1, 10, planned=True)]}, w, [day])
+        assert plans[0].verdict is DayVerdict.SKIP
+        assert "Already planning to miss" in plans[0].reason
+
+    def test_committed_lectures_are_not_charged_for_twice(self):
+        """One of two lectures is already committed; one lecture of budget is
+        left, so the rest of the day is skippable outright."""
+        w = self._wallet({"CN": 1}, 1)
+        day = date(2026, 8, 17)
+        plans = day_plans(
+            {day: [lecture("CN", 1, 9, planned=True), lecture("CN", 1, 10)]},
+            w, [day])
+        assert plans[0].verdict is DayVerdict.SKIP
+        assert plans[0].skippable_codes == ["CN"]
+
+    def test_a_committed_class_never_becomes_the_one_you_stay_for(self):
+        w = self._wallet({"CN": 1}, 1)
+        day = date(2026, 8, 17)
+        plans = day_plans(
+            {day: [lecture("CN", 1, 9),
+                   lecture("CN", 1, 10, planned=True),
+                   lecture("CN", 1, 11)]}, w, [day])
+        assert plans[0].verdict is DayVerdict.PARTIAL
+        # 09:00 is the last class you actually attend — the 10:00 you already
+        # wrote off cannot be what keeps you there.
+        assert plans[0].leave_after == time(10, 0)
+
+    def test_a_cut_across_a_break_beats_one_that_leaves_you_sitting(self):
+        """Two cuts skip two lectures each. Only one of them also gets you out
+        before an hour of nothing, and that hour is the whole point."""
+        w = self._wallet({"CN": 2}, 2)
+        day = date(2026, 8, 17)
+        # 09, 10, then a 12–13 break, then 13, 14. Leaving after 10:00 skips
+        # 13:00 and 14:00 *and* the break; arriving at 13:00 skips 09 and 10.
+        lectures = [lecture("CN", 1, 9), lecture("CN", 1, 10),
+                    lecture("CN", 1, 13), lecture("CN", 1, 14)]
+        breaks = {day: [BreakSpan(time(12, 0), time(13, 0), "Lunch")]}
+
+        plan = day_plans({day: lectures}, w, [day], breaks)[0]
+        assert plan.verdict is DayVerdict.PARTIAL
+        assert plan.leave_after == time(11, 0)
+        assert plan.covers_break == "Lunch"
+        # 11:00 to 15:00 — the two lectures, plus the lunch hour between them.
+        assert plan.freed_minutes == 240
+        assert "Lunch" in plan.reason
+
+    def test_without_breaks_the_verdict_is_what_it_always_was(self):
+        w = self._wallet({"CN": 1}, 1)
+        day = date(2026, 8, 17)
+        lectures = [lecture("CN", 1, 9), lecture("CN", 1, 10)]
+
+        bare = day_plans({day: lectures}, w, [day])[0]
+        empty = day_plans({day: lectures}, w, [day], {day: []})[0]
+        assert bare.verdict is empty.verdict is DayVerdict.PARTIAL
+        assert bare.leave_after == empty.leave_after == time(10, 0)
+        assert bare.covers_break is None
+
+    def test_the_sentence_describes_the_cut_it_actually_chose(self):
+        """The wording used to be picked before the winner was, so a day whose
+        best move was arriving late could still be told to leave early."""
+        w = self._wallet({"CN": 1, "OS": 1}, 2)
+        day = date(2026, 8, 17)
+        # OS has room for one of its two, so the whole day never fits. Dropping
+        # the morning (CN 09:00 + OS 10:00) frees two hours; dropping the last
+        # lecture frees one. Arriving late wins, and the sentence has to say so.
+        lectures = [lecture("CN", 1, 9), lecture("OS", 2, 10), lecture("OS", 2, 11)]
+
+        plan = day_plans({day: lectures}, w, [day])[0]
+        assert plan.verdict is DayVerdict.PARTIAL
+        assert plan.arrive_at == time(11, 0)
+        assert plan.leave_after is None
+        assert "Arrive by 11:00" in plan.reason
+        assert plan.skippable_codes == ["CN", "OS"]
+        assert [l.code for l in plan.skippable] == ["CN", "OS"]
+
+    def test_a_break_never_reaches_the_budget(self):
+        """It changes where you cut the day, never how much the cut costs."""
+        w = self._wallet({"CN": 1}, 1)
+        day = date(2026, 8, 17)
+        lectures = [lecture("CN", 1, 9), lecture("CN", 1, 11)]
+        breaks = {day: [BreakSpan(time(10, 0), time(11, 0), "Break")]}
+
+        plan = day_plans({day: lectures}, w, [day], breaks)[0]
+        assert plan.verdict is DayVerdict.PARTIAL
+        assert len(plan.skippable) == 1          # one lecture of budget, one lecture
 
     def test_horizon_is_respected(self):
         w = self._wallet({"CN": 3}, 3)
@@ -288,3 +378,84 @@ class TestSimulator:
         plan = simulate(rows, 70).wallet.subjects[0]
         # 14 + (10 - 4) = 20 attended out of 26
         assert plan.projected_worst_pct == pytest.approx(2000 / 26)
+
+
+class TestSkipLadder:
+    """"If I skip DBMS, what does the 1st, 2nd, 3rd cost me?" """
+
+    def _rows(self):
+        # 14 present, 2 absent, 10 remaining, limit 70% -> budget 5.
+        return [subject_row(sid=1, code="DBMS", limit=70, present=14, absent=2,
+                            remaining=10),
+                subject_row(sid=2, code="OR", limit=70, present=20, absent=0,
+                            remaining=10)]
+
+    def test_each_rung_matches_committing_that_many_absences(self):
+        """The ladder must agree with actually planning n absences, or it is
+        advertising an outcome the app won't deliver."""
+        rows = self._rows()
+        for rung in skip_ladder(rows, overall_limit=75, subject_id=1):
+            committed = [
+                {**r, "planned_absences": r["planned_absences"] + rung.n}
+                if r["id"] == 1 else r
+                for r in rows
+            ]
+            wallet = build_wallet(committed, overall_limit=75)
+            plan = wallet.by_id()[1]
+            assert rung.subject_pct == plan.projected_worst_pct
+            assert rung.subject_budget_left == plan.budget
+
+    def test_it_never_mutates_the_rows_it_is_given(self):
+        """`wallet_rows` hands out shared dicts; mutating them would corrupt
+        every later rung and the caller's wallet with it."""
+        rows = self._rows()
+        before = [dict(r) for r in rows]
+        skip_ladder(rows, overall_limit=75, subject_id=1)
+        assert [dict(r) for r in rows] == before
+
+    def test_the_ladder_stops_at_what_remains(self):
+        rows = [subject_row(sid=1, present=10, absent=0, remaining=2)]
+        rungs = skip_ladder(rows, overall_limit=75, subject_id=1)
+        assert [r.n for r in rungs] == [1, 2]
+
+    def test_it_shows_the_cliff_and_a_step_past_it(self):
+        rungs = skip_ladder(self._rows(), overall_limit=75, subject_id=1)
+        unsafe = [r for r in rungs if not r.is_safe]
+        assert unsafe, "a ladder that never breaks tells you nothing"
+        assert rungs[-1].n > unsafe[0].n, "should show at least one rung past the cliff"
+
+    def test_a_subject_already_broken_does_not_blame_this_choice(self):
+        """Someone under water everywhere would otherwise see the same codes
+        against every rung, which says nothing about the decision at hand."""
+        rows = [subject_row(sid=1, code="DBMS", limit=70, present=1, absent=9,
+                            remaining=1),
+                subject_row(sid=2, code="OR", limit=70, present=0, absent=10,
+                            remaining=1)]
+        for rung in skip_ladder(rows, overall_limit=75, subject_id=1):
+            assert "OR" not in rung.breaks
+
+    def test_an_unknown_subject_has_no_ladder(self):
+        assert skip_ladder(self._rows(), overall_limit=75, subject_id=99) == []
+
+
+class TestHorizonMonotonicity:
+    """Checkpoints shorten the window every projection runs to. That must only
+    ever be the more conservative reading — if a nearer deadline could hand you
+    a bigger budget, the feature would be actively dangerous."""
+
+    @given(
+        present=st.integers(0, 60), absent=st.integers(0, 60),
+        unknown=st.integers(0, 20), unreported=st.integers(0, 20),
+        remaining=st.integers(0, 40), shrink=st.integers(0, 40),
+        limit=st.integers(1, 99),
+    )
+    @settings(max_examples=400)
+    def test_a_shorter_horizon_never_grows_the_budget(
+        self, present, absent, unknown, unreported, remaining, shrink, limit
+    ):
+        def budget(r):
+            rows = [subject_row(present=present, absent=absent, unknown=unknown,
+                                unreported=unreported, remaining=r, limit=limit)]
+            return build_wallet(rows, overall_limit=limit).subjects[0].budget
+
+        assert budget(max(0, remaining - shrink)) <= budget(remaining)

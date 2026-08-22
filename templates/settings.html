@@ -19,11 +19,6 @@
                value="{{ current_user.username }}" required>
         <div class="field__hint">Letters, numbers, dots or underscores. You can sign in with this or your email.</div>
       </div>
-      <div class="field">
-        <label for="name">Display name</label>
-        <input class="input" id="name" name="name" value="{{ current_user.name or '' }}"
-               placeholder="Taken from your report if you leave it blank">
-      </div>
       <div class="row" style="margin-bottom:var(--sp-4)">
         <span class="badge badge--neutral">{{ current_user.email }}</span>
         {% if current_user.student_number %}
@@ -31,9 +26,6 @@
         {% endif %}
         {% if current_user.roll_no %}
           <span class="badge badge--neutral">Roll {{ current_user.roll_no }}</span>
-        {% endif %}
-        {% if push_devices %}
-          <span class="badge badge--safe">{{ push_devices }} {{ 'device' if push_devices == 1 else 'devices' }}</span>
         {% endif %}
       </div>
       <button class="btn btn--primary" type="submit">Save profile</button>
@@ -61,7 +53,7 @@
         {% endif %}
       </div>
 
-      <div class="field">
+      <div class="field" style="margin-bottom:0">
         <label for="overall_limit">Overall limit %</label>
         <input class="input input--mono {% if errors.overall_limit %}is-error{% endif %}"
                id="overall_limit" name="overall_limit" inputmode="numeric"
@@ -72,40 +64,7 @@
           <div class="field__hint">Across every lecture of every subject.</div>
         {% endif %}
       </div>
-
-      <div class="field" style="margin-bottom:0">
-        <label for="staleness_days">Nudge me after (days)</label>
-        <input class="input input--mono {% if errors.staleness_days %}is-error{% endif %}"
-               id="staleness_days" name="staleness_days" inputmode="numeric"
-               value="{{ settings.staleness_days }}">
-        {% if errors.staleness_days %}
-          <div class="field__error">{{ errors.staleness_days }}</div>
-        {% else %}
-          <div class="field__hint">How long your newest report may age before Bunkr says something.</div>
-        {% endif %}
-      </div>
     </div>
-
-    {% if subjects %}
-    <div class="card">
-      <h3>Per-subject overrides</h3>
-      <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
-        Leave blank to use the {{ settings.subject_limit }}% default.
-      </p>
-      {% for subject in subjects %}
-      <div class="limit-row">
-        <div>
-          <b class="mono">{{ subject.code }}</b>
-          <span class="text-muted" style="font-size:var(--text-sm)"> · {{ subject.lecture_type }}</span>
-        </div>
-        <input class="input input--mono {% if errors['custom_limit_' ~ subject.id] %}is-error{% endif %}"
-               name="custom_limit_{{ subject.id }}" inputmode="numeric"
-               placeholder="{{ settings.subject_limit }}"
-               value="{{ subject.custom_limit if subject.custom_limit is not none else '' }}">
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
 
     <div class="row">
       <button class="btn btn--primary" type="submit">Save settings</button>
@@ -113,55 +72,29 @@
     </div>
   </form>
 
-  {# ---- Notifications -------------------------------------------------- #}
-  <div class="card card--cyan">
-    <h3>Morning notification</h3>
-    <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
-      One notification a day with tomorrow's verdict — so most mornings you don't
-      have to open anything at all.
-    </p>
-
-    <div class="row" style="margin-bottom:var(--sp-3)">
-      <label class="toggle">
-        <input type="checkbox" id="push-toggle"
-               data-configured="{{ '1' if push_configured else '0' }}"
-               data-key="{{ push_public_key or '' }}"
-               {% if settings.notify_enabled and push_devices %}checked{% endif %}>
-        <span class="toggle__track"></span>
-      </label>
-      <span id="push-status" class="text-muted" style="font-size:var(--text-sm)">
-        {% if settings.notify_enabled and push_devices %}
-          On — {{ push_devices }} {{ 'device' if push_devices == 1 else 'devices' }} registered.
-        {% else %}
-          Off.
-        {% endif %}
-      </span>
-      <button class="btn btn--sm" id="push-test" type="button"
-              {% if not (settings.notify_enabled and push_devices) %}hidden{% endif %}>
-        Send a test
-      </button>
+  {# ---- The rest of setup ----------------------------------------------
+     Outside the limits form on purpose: these are links, and nesting them in
+     the form meant following one threw away whatever you'd just typed above. #}
+  <div class="card">
+    <h3>Set up</h3>
+    <div class="setup-grid" style="margin-top:var(--sp-3)">
+      <a class="setup-tile card--tint-1" href="{{ url_for('core.timetable') }}">
+        <div class="setup-tile__title">Edit timetable</div>
+        <div class="setup-tile__note">Your weekly grid of classes and breaks.</div>
+      </a>
+      <a class="setup-tile card--tint-3" href="{{ url_for('core.calendar') }}">
+        <div class="setup-tile__title">Calendar</div>
+        <div class="setup-tile__note">Semester dates, holidays, planned absences.</div>
+      </a>
+      <a class="setup-tile card--tint-6" href="{{ url_for('core.checkpoints') }}">
+        <div class="setup-tile__title">Checkpoints</div>
+        <div class="setup-tile__note">Deadlines your attendance has to clear.</div>
+      </a>
+      <a class="setup-tile card--tint-4" href="{{ url_for('core.subjects') }}">
+        <div class="setup-tile__title">Subjects</div>
+        <div class="setup-tile__note">Names, short codes and per-subject limits.</div>
+      </a>
     </div>
-
-    <form method="post" class="row" style="align-items:flex-end;gap:var(--sp-3)">
-      <div class="field" style="margin:0;max-width:160px">
-        <label for="notify_hour">Send at</label>
-        <input class="input input--mono {% if errors.notify_hour %}is-error{% endif %}"
-               id="notify_hour" name="notify_hour" inputmode="numeric"
-               value="{{ settings.notify_hour }}">
-        {% if errors.notify_hour %}
-          <div class="field__error">{{ errors.notify_hour }}</div>
-        {% else %}
-          <div class="field__hint">Hour of the day, 0–23.</div>
-        {% endif %}
-      </div>
-      <input type="hidden" name="only_notify_hour" value="1">
-      <button class="btn btn--sm" type="submit">Save time</button>
-    </form>
-
-    <p class="text-muted" style="font-size:var(--text-sm);margin-bottom:0">
-      On iPhone, add Bunkr to your home screen first — iOS only allows
-      notifications for installed web apps.
-    </p>
   </div>
 
   {# ---- Danger zone ---------------------------------------------------- #}

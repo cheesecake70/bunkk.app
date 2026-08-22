@@ -4,4 +4,3 @@ flask-login>=0.6
 flask-migrate>=4.0
 pdfplumber>=0.11
 gunicorn>=22.0
-pywebpush>=2.0

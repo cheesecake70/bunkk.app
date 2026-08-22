@@ -2,17 +2,26 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date
+from datetime import date, time
 
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
 from report_parser import ReportParseError
 
-from . import db, planning, push
+from attendance_engine import DayVerdict
+
+from . import db, planning
 from .merge import MergeError, MergeResult, ingest, resolve_proposals
-from .models import PlannedAbsence, PushSubscription, Subject
-from .services import coverage_for, dashboard_for, settings_for
+from .models import LectureInstance, LecturePrediction, PlannedAbsence, Subject
+from .services import (
+    UNKNOWN_STATUSES,
+    apply_subject_edits,
+    coverage_for,
+    dashboard_for,
+    settings_for,
+    subject_limit,
+)
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -108,7 +117,7 @@ def dashboard():
 @bp.post("/calendar/day")
 @login_required
 def calendar_day():
-    """Tap a day: normal → holiday → swap → normal."""
+    """Tap a day: normal → holiday → normal."""
     payload = request.get_json(silent=True) or {}
     try:
         on_date = date.fromisoformat(payload.get("date", ""))
@@ -119,18 +128,201 @@ def calendar_day():
         return jsonify(error="Bunkr only plans forwards — past days can't change."), 400
 
     kind = payload.get("kind")
-    if kind not in (None, "holiday", "swap"):
+    if kind not in (None, "holiday"):
         return jsonify(error="Unknown day type."), 400
 
-    swap_weekday = payload.get("swap_weekday")
-    if kind == "swap":
-        if not isinstance(swap_weekday, int) or not 0 <= swap_weekday <= 6:
-            return jsonify(error="Pick which weekday's timetable runs."), 400
+    planning.set_day(current_user, on_date, kind, name=(payload.get("name") or None))
+    return jsonify(ok=True, date=on_date.isoformat(), kind=kind)
 
-    planning.set_day(current_user, on_date, kind,
-                     name=(payload.get("name") or None), swap_weekday=swap_weekday)
-    return jsonify(ok=True, date=on_date.isoformat(), kind=kind,
-                   swap_weekday=swap_weekday)
+
+@bp.route("/lectures/<int:lecture_id>/prediction", methods=["PUT", "DELETE"])
+@login_required
+def lecture_prediction(lecture_id: int):
+    """Say how you expect an unmarked lecture to resolve, or take it back."""
+    lecture = db.session.get(LectureInstance, lecture_id)
+    if lecture is None or lecture.user_id != current_user.id:
+        return jsonify(error="Not found."), 404
+
+    existing = (
+        db.session.query(LecturePrediction)
+        .filter_by(user_id=current_user.id, lecture_id=lecture_id)
+        .one_or_none()
+    )
+
+    if request.method == "DELETE":
+        if existing is not None:
+            db.session.delete(existing)
+            db.session.commit()
+        return jsonify(ok=True, predicted=None)
+
+    # Guessing at a lecture the college has already marked would be overwriting
+    # fact with opinion, which is the one thing this feature must never do.
+    if lecture.status not in UNKNOWN_STATUSES:
+        return jsonify(error="The college has already marked that one."), 409
+
+    predicted = (request.get_json(silent=True) or {}).get("predicted")
+    if predicted not in ("P", "A"):
+        return jsonify(error="Predict either P or A."), 400
+
+    if existing is None:
+        existing = LecturePrediction(user_id=current_user.id, lecture_id=lecture_id,
+                                     predicted=predicted)
+        db.session.add(existing)
+    else:
+        existing.predicted = predicted
+    db.session.commit()
+    return jsonify(ok=True, predicted=predicted)
+
+
+@bp.get("/day/<on_date>")
+@login_required
+def day_sheet(on_date: str):
+    """One day's lectures and what is already planned against them.
+
+    Keyed by (subject, start) rather than by time alone: a timetable can run
+    two subjects in the same slot, and two lectures of one subject in a day.
+    """
+    try:
+        day = date.fromisoformat(on_date)
+    except ValueError:
+        return jsonify(error="Bad date."), 400
+
+    holiday = next(
+        (h for h in planning.holidays_for(current_user) if h.on_date == day), None
+    )
+    codes = {
+        s.id: s.code
+        for s in db.session.query(Subject).filter_by(user_id=current_user.id).all()
+    }
+    planned = (
+        db.session.query(PlannedAbsence)
+        .filter_by(user_id=current_user.id, on_date=day)
+        .all()
+    )
+    whole_day = next(
+        (p for p in planned if p.subject_id is None and p.start_time is None), None
+    )
+
+    def absence_for(subject_id, start):
+        for row in planned:
+            if row.subject_id != subject_id:
+                continue
+            if row.start_time is None or planning.same_minute(row.start_time, start):
+                return row.id
+        return None
+
+    win = planning.windows(current_user)
+    end = planning.semester_end(current_user)
+
+    return jsonify(
+        date=day.isoformat(),
+        is_past=day < date.today(),
+        in_semester=bool(end and day <= end),
+        # False past the next checkpoint: the absence is real and will be
+        # stored, it just doesn't spend from the budget on screen yet.
+        in_horizon=bool(win.remaining_to and day <= win.remaining_to),
+        horizon_to=win.remaining_to.isoformat() if win.remaining_to else None,
+        holiday=({"name": holiday.name} if holiday else None),
+        whole_day_absence_id=(whole_day.id if whole_day else None),
+        lectures=[
+            {
+                "subject_id": o.slot.subject_id,
+                "code": codes.get(o.slot.subject_id, "?"),
+                "start": o.slot.start_time.isoformat(),
+                "end": o.slot.end_time.isoformat(),
+                "absence_id": absence_for(o.slot.subject_id, o.slot.start_time),
+            }
+            for o in planning.lectures_on(current_user, day)
+        ],
+        breaks=[
+            {
+                "start": b.start_time.isoformat(),
+                "end": b.end_time.isoformat(),
+                "label": b.label or "Break",
+            }
+            for b in planning.breaks_on(current_user, day)
+        ],
+        # The half-day the maths actually recommends, so the sheet can offer it
+        # in one tap instead of leaving you to work out which boxes to tick.
+        partial=_partial_payload(planning.day_plan_on(current_user, day)),
+    )
+
+
+def _partial_payload(plan):
+    """The "leave after / arrive by" option, when there is one."""
+    if plan is None or plan.verdict != DayVerdict.PARTIAL:
+        return None
+    return {
+        "leave_after": plan.leave_after.isoformat() if plan.leave_after else None,
+        "arrive_at": plan.arrive_at.isoformat() if plan.arrive_at else None,
+        "reason": plan.reason,
+        "freed_minutes": plan.freed_minutes,
+        "covers_break": plan.covers_break,
+        "skippable": [
+            {"subject_id": l.subject_id, "start": l.start_time.isoformat()}
+            for l in plan.skippable
+        ],
+    }
+
+
+def _day_guard(payload):
+    """The date every absence request needs, or the reason it can't be used."""
+    try:
+        on_date = date.fromisoformat(payload.get("date", ""))
+    except ValueError:
+        return None, (jsonify(error="Bad date."), 400)
+    if on_date < date.today():
+        return None, (jsonify(error="That day has already happened."), 400)
+
+    # The other end was missing entirely, so an absence could be filed for any
+    # date at all — including ones no semester will ever reach.
+    end = planning.semester_end(current_user)
+    if end and on_date > end:
+        return None, (jsonify(error="That's after your semester ends."), 400)
+    return on_date, None
+
+
+def _ensure_absence(on_date, subject_id, raw_start, note=None):
+    """Get or create one planned absence. Validates, but never commits.
+
+    Left uncommitted so a batch — "leave after 12:00", which is four lectures
+    and one decision — lands as one transaction rather than four races.
+    """
+    if subject_id is not None:
+        subject = db.session.get(Subject, subject_id)
+        if subject is None or subject.user_id != current_user.id:
+            return None, (jsonify(error="Unknown subject."), 404)
+
+    try:
+        start_time = time.fromisoformat(raw_start) if raw_start else None
+    except (TypeError, ValueError):
+        return None, (jsonify(error="Bad time."), 400)
+
+    # An absence against a lecture the timetable doesn't have would count zero
+    # anyway; refusing it says so instead of silently storing a no-op.
+    if subject_id is not None:
+        lectures = planning.lectures_on(current_user, on_date)
+        matches = [o for o in lectures if o.slot.subject_id == subject_id
+                   and (start_time is None
+                        or planning.same_minute(o.slot.start_time, start_time))]
+        if not matches:
+            return None, (jsonify(error="Your timetable has no such class that day."), 422)
+
+    # SQLite treats NULLs as distinct in a unique index, so the constraint
+    # alone would not stop two whole-day rows. The check stays.
+    existing = (
+        db.session.query(PlannedAbsence)
+        .filter_by(user_id=current_user.id, on_date=on_date,
+                   subject_id=subject_id, start_time=start_time)
+        .one_or_none()
+    )
+    if existing is None:
+        existing = PlannedAbsence(
+            user_id=current_user.id, on_date=on_date, subject_id=subject_id,
+            start_time=start_time, note=(note or None),
+        )
+        db.session.add(existing)
+    return existing, None
 
 
 @bp.post("/absences")
@@ -138,32 +330,55 @@ def calendar_day():
 def add_absence():
     """Commit to missing a future date (whole day, or one subject on it)."""
     payload = request.get_json(silent=True) or {}
-    try:
-        on_date = date.fromisoformat(payload.get("date", ""))
-    except ValueError:
-        return jsonify(error="Bad date."), 400
-    if on_date < date.today():
-        return jsonify(error="That day has already happened."), 400
+    on_date, error = _day_guard(payload)
+    if error:
+        return error
 
-    subject_id = payload.get("subject_id")
-    if subject_id is not None:
-        subject = db.session.get(Subject, subject_id)
-        if subject is None or subject.user_id != current_user.id:
-            return jsonify(error="Unknown subject."), 404
+    row, error = _ensure_absence(on_date, payload.get("subject_id"),
+                                 payload.get("start"), payload.get("note"))
+    if error:
+        db.session.rollback()
+        return error
 
-    existing = (
-        db.session.query(PlannedAbsence)
-        .filter_by(user_id=current_user.id, on_date=on_date, subject_id=subject_id)
-        .one_or_none()
-    )
-    if existing is None:
-        db.session.add(PlannedAbsence(
-            user_id=current_user.id, on_date=on_date, subject_id=subject_id,
-            note=(payload.get("note") or None),
-        ))
-        db.session.commit()
+    db.session.commit()
+    # The id rides along so the caller can offer Undo without re-querying.
+    return jsonify(dict(_wallet_payload(), absence_id=row.id))
 
-    return jsonify(_wallet_payload())
+
+@bp.post("/absences/batch")
+@login_required
+def add_absences():
+    """Commit to missing several lectures of one day at once.
+
+    "Leave after 12:00" is one decision, not four. Posting it as four requests
+    raced them against each other and recomputed the whole wallet four times
+    for an answer that only had to be worked out once.
+    """
+    payload = request.get_json(silent=True) or {}
+    on_date, error = _day_guard(payload)
+    if error:
+        return error
+
+    wanted = payload.get("lectures")
+    if not isinstance(wanted, list) or not wanted:
+        return jsonify(error="Nothing to plan."), 400
+
+    ids = {}
+    for item in wanted:
+        if not isinstance(item, dict):
+            db.session.rollback()
+            return jsonify(error="Malformed lecture in the plan."), 400
+        row, error = _ensure_absence(on_date, item.get("subject_id"), item.get("start"))
+        if error:
+            # All or nothing: a half-applied "leave after 12:00" is a plan the
+            # user never made.
+            db.session.rollback()
+            return error
+        db.session.flush()
+        ids[f"{item.get('subject_id')}|{item.get('start')}"] = row.id
+
+    db.session.commit()
+    return jsonify(dict(_wallet_payload(), absence_ids=ids))
 
 
 @bp.delete("/absences/<int:absence_id>")
@@ -185,93 +400,141 @@ def simulate_plan():
     extras = []
     for item in payload.get("absences") or []:
         try:
-            extras.append((date.fromisoformat(item["date"]), item.get("subject_id")))
+            start = item.get("start")
+            extras.append((
+                date.fromisoformat(item["date"]),
+                item.get("subject_id"),
+                time.fromisoformat(start) if start else None,
+            ))
         except (KeyError, TypeError, ValueError):
             return jsonify(error="Malformed absence in the plan."), 400
     return jsonify(_wallet_payload(extras))
 
 
-@bp.get("/push/key")
+@bp.put("/timetable")
 @login_required
-def push_key():
-    return jsonify(configured=push.is_configured(), public_key=push.public_key())
+def save_timetable():
+    """Store the whole grid. The editor calls this every time you press Done.
+
+    The grid is small and the client always holds all of it, so a whole-grid
+    PUT is both simpler and safer than per-block patching: there is no way for
+    the stored week to end up in a state the user never saw.
+    """
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("blocks"), list):
+        return jsonify(error="Malformed request."), 400
+
+    entries = planning.entries_from(payload["blocks"])
+    if not any(e.kind == "class" for e in entries):
+        return jsonify(
+            error="Add at least one class — an empty timetable can't project anything."
+        ), 422
+
+    try:
+        planning.save_timetable(current_user, entries, source="manual")
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+
+    return jsonify(ok=True, classes=sum(1 for e in entries if e.kind == "class"))
 
 
-@bp.post("/push/subscribe")
+@bp.put("/subjects/<int:subject_id>")
 @login_required
-def push_subscribe():
-    payload = request.get_json(silent=True) or {}
-    endpoint = payload.get("endpoint")
-    keys = payload.get("keys") or {}
-    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
-        return jsonify(error="Incomplete subscription."), 400
+def update_subject(subject_id: int):
+    """Save one subject from the card you edited it in.
 
-    existing = (
-        db.session.query(PushSubscription).filter_by(endpoint=endpoint).one_or_none()
-    )
-    if existing is not None:
-        # Endpoints are unique per browser and get reused when someone signs in
-        # as a different account on the same device. Reassign the row in place —
-        # deleting and re-inserting trips the unique constraint on autoflush,
-        # and leaving it would push one student's verdicts to another's phone.
-        existing.user_id = current_user.id
-        existing.p256dh = keys["p256dh"]
-        existing.auth = keys["auth"]
-        existing.user_agent = (payload.get("user_agent") or "")[:255]
-    else:
-        db.session.add(PushSubscription(
-            user_id=current_user.id,
-            endpoint=endpoint,
-            p256dh=keys["p256dh"],
-            auth=keys["auth"],
-            user_agent=(payload.get("user_agent") or "")[:255],
-        ))
+    Same validation as the batch form on /subjects — both go through
+    `apply_subject_edits` — so a per-card save can never accept something the
+    whole-page save would reject.
+    """
+    subject = db.session.get(Subject, subject_id)
+    if subject is None or subject.user_id != current_user.id:
+        return jsonify(error="Unknown subject."), 404
 
-    settings = settings_for(current_user)
-    settings.notify_enabled = True
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(error="Malformed request."), 400
+
+    siblings = db.session.query(Subject).filter_by(user_id=current_user.id).all()
+    values = {k: payload[k] for k in ("name", "code", "custom_limit") if k in payload}
+    if not values:
+        return jsonify(error="Nothing to save."), 400
+
+    errors = apply_subject_edits(subject, siblings, values)
+    if errors:
+        db.session.rollback()
+        return jsonify(errors=errors), 422
+
     db.session.commit()
-    return jsonify(ok=True)
-
-
-@bp.post("/push/unsubscribe")
-@login_required
-def push_unsubscribe():
-    endpoint = (request.get_json(silent=True) or {}).get("endpoint")
-    if endpoint:
-        row = (
-            db.session.query(PushSubscription)
-            .filter_by(endpoint=endpoint, user_id=current_user.id)
-            .one_or_none()
-        )
-        if row is not None:
-            db.session.delete(row)
-
-    remaining = (
-        db.session.query(PushSubscription).filter_by(user_id=current_user.id).count()
+    return jsonify(
+        ok=True,
+        subject={
+            "id": subject.id,
+            "name": subject.canonical_name,
+            "code": subject.code,
+            "custom_limit": subject.custom_limit,
+            "limit": subject_limit(subject, settings_for(current_user)),
+        },
     )
-    if remaining == 0:
-        settings_for(current_user).notify_enabled = False
-    db.session.commit()
-    return jsonify(ok=True)
 
 
-@bp.post("/push/test")
+@bp.get("/subjects/<int:subject_id>/skip-ladder")
 @login_required
-def push_test():
-    if not push.is_configured():
-        return jsonify(error="Notifications aren't configured on this server."), 400
+def skip_ladder(subject_id: int):
+    """What skipping 1, 2, 3... more lectures of this subject would cost.
 
-    brief = planning.morning_brief(current_user)
-    payload = push.brief_payload(brief) if brief else {
-        "title": "Bunkr works",
-        "body": "Nothing to report right now — you're all caught up.",
-        "url": "/",
-        "tag": "bunkr-test",
-    }
-    delivered = push.send_to_user(current_user, payload)
-    if not delivered:
-        return jsonify(error="No device accepted the notification."), 502
-    return jsonify(ok=True, delivered=delivered)
+    Subject and overall are reported separately because `build_wallet` caps
+    every subject's budget at the overall one: a rung can be comfortable for
+    DBMS and still break the 75% rule across everything.
+    """
+    subject = db.session.get(Subject, subject_id)
+    if subject is None or subject.user_id != current_user.id:
+        return jsonify(error="Unknown subject."), 404
+
+    rungs = planning.skip_ladder_for(current_user, subject_id)
+    dates = planning.upcoming_occurrences(current_user, subject_id,
+                                          limit=len(rungs))
+    win = planning.windows(current_user)
+
+    # A rung reports what it newly breaks, so a subject that is *already* under
+    # water would show "nothing new breaks" on every rung. Say which it is, or
+    # the page reads as "still safe" while quoting 33%.
+    current = planning.wallet_for(current_user).by_id().get(subject_id)
+    already_broken = bool(current and current.verdict.value == "danger")
+
+    return jsonify(
+        subject={"id": subject.id, "code": subject.code,
+                 "name": subject.canonical_name,
+                 "already_broken": already_broken,
+                 "current_pct": _pct(current.projected_worst_pct) if current else None,
+                 "limit": current.limit if current else None},
+        horizon={
+            "to": win.remaining_to.isoformat() if win.remaining_to else None,
+            "is_checkpoint": win.horizon_is_checkpoint,
+            "label": win.checkpoint_label,
+        },
+        next_dates=[
+            {"date": o.on_date.isoformat(),
+             "start": o.slot.start_time.isoformat(),
+             "end": o.slot.end_time.isoformat()}
+            for o in dates
+        ],
+        ladder=[
+            {
+                "n": r.n,
+                "subject_pct": _pct(r.subject_pct),
+                "subject_verdict": r.subject_verdict.value,
+                "subject_budget_left": r.subject_budget_left,
+                "overall_pct": _pct(r.overall_pct),
+                "overall_verdict": r.overall_verdict.value,
+                "breaks": list(r.breaks),
+                "is_safe": r.is_safe,
+                "through_date": (dates[r.n - 1].on_date.isoformat()
+                                 if r.n <= len(dates) else None),
+            }
+            for r in rungs
+        ],
+    )
 
 
 def _wallet_payload(extras=None) -> dict:
@@ -310,7 +573,7 @@ def _wallet_payload(extras=None) -> dict:
                     for l in d.lectures
                 ],
             }
-            for d in planning.day_strip(current_user, wallet=wallet)
+            for d in planning.horizon_strip(current_user, wallet=wallet)
         ],
     }
 

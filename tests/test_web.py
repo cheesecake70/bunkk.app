@@ -11,7 +11,7 @@ import pytest
 from reportlab_stub import make_detailed_pdf
 
 from app import create_app, db
-from app.models import Subject, User
+from app.models import LectureInstance, Subject, User
 
 GOLDEN = Path(__file__).parent / "golden" / "detailed_jul_aug.pdf"
 SUMMARY = Path(__file__).parent / "golden" / "summary_july.pdf"
@@ -89,7 +89,7 @@ class TestAuth:
         assert resp.status_code == 302
         assert client.get("/").status_code == 200
 
-    @pytest.mark.parametrize("path", ["/", "/upload", "/history", "/settings"])
+    @pytest.mark.parametrize("path", ["/", "/upload", "/settings"])
     def test_pages_require_a_session(self, client, path):
         resp = client.get(path)
         assert resp.status_code == 302
@@ -229,15 +229,37 @@ class TestPages:
         upload(client)
         return client
 
-    def test_dashboard_shows_the_budget_and_subjects(self, loaded):
-        html = loaded.get("/").get_data(as_text=True)
-        assert "Bunks left overall" in html
+    def test_plan_shows_the_subjects_and_the_totals(self, loaded):
+        html = loaded.get("/plan").get_data(as_text=True)
         assert "DBMS Lab" in html
-        assert "Worst-case %" in html
+        assert "Attended" in html
 
-    def test_dashboard_flags_the_pending_pile(self, loaded):
-        html = loaded.get("/").get_data(as_text=True)
+    def test_plan_shows_best_case_beside_the_current_figure(self, loaded):
+        """Worst case decides; best case says how much of the gap is unknowns."""
+        html = loaded.get("/plan").get_data(as_text=True)
+        assert "Best case" in html
+
+    def test_plan_flags_the_pending_pile(self, loaded):
+        html = loaded.get("/plan").get_data(as_text=True)
         assert "pending lectures" in html
+
+    def test_plan_drops_the_lecture_type_column(self, loaded):
+        """One row per subject, no column restating what the code already says."""
+        html = loaded.get("/plan").get_data(as_text=True)
+        assert "<th class=\"col-optional\">Type</th>" not in html
+
+    def test_overview_redirects_into_plan(self, loaded):
+        """The two pages answered the same question; the old address still works."""
+        resp = loaded.get("/overview")
+        assert resp.status_code == 301
+        assert resp.headers["Location"].endswith("/plan")
+
+    def test_today_does_not_carry_the_semester_table(self, loaded):
+        """The split is the point: Today answers one question and stops."""
+        html = loaded.get("/").get_data(as_text=True)
+        assert "Bunks left" not in html
+        assert "Planned absences" not in html
+        assert "Best case" not in html
 
     def test_empty_dashboard_asks_for_a_pdf(self, client):
         register(client)
@@ -254,14 +276,14 @@ class TestPages:
         assert "Worst case" in html
         assert html.count('class="lecture ') == 12   # 7 P + 2 A + 3 NU
 
-    def test_history_lists_the_upload(self, loaded):
-        html = loaded.get("/history").get_data(as_text=True)
+    def test_upload_page_shows_what_is_covered(self, loaded):
+        """Coverage lives on Upload — the page you'd act on it from."""
+        html = loaded.get("/upload").get_data(as_text=True)
         assert "01.07 → 12.08" in html
-        assert "126" in html
 
     def test_settings_round_trip(self, loaded):
         resp = loaded.post("/settings", data={
-            "subject_limit": "80", "overall_limit": "85", "staleness_days": "3",
+            "subject_limit": "80", "overall_limit": "85",
         }, follow_redirects=True)
         assert resp.status_code == 200
         assert "80" in resp.get_data(as_text=True)
@@ -271,7 +293,7 @@ class TestPages:
 
     def test_settings_rejects_an_impossible_percentage(self, loaded):
         resp = loaded.post("/settings", data={
-            "subject_limit": "110", "overall_limit": "75", "staleness_days": "7",
+            "subject_limit": "110", "overall_limit": "75",
         })
         assert resp.status_code == 400
         assert "between 0 and 100" in resp.get_data(as_text=True)
@@ -279,14 +301,102 @@ class TestPages:
     def test_per_subject_override_changes_that_subjects_limit(self, loaded, app):
         with app.app_context():
             subject_id = db.session.query(Subject).filter_by(code="DS").one().id
-        loaded.post("/settings", data={
-            "subject_limit": "70", "overall_limit": "75", "staleness_days": "7",
+        loaded.post("/subjects", data={
+            f"name_{subject_id}": "Data Structures",
+            f"code_{subject_id}": "DS",
             f"custom_limit_{subject_id}": "50",
         })
         body = loaded.get("/api/dashboard").get_json()
         ds = next(s for s in body["subjects"] if s["code"] == "DS")
         assert ds["limit"] == 50
         assert ds["verdict"] != "danger"     # 58.3% worst case now clears 50%
+
+
+class TestSettingsPageShape:
+    @pytest.fixture()
+    def loaded(self, client):
+        register(client)
+        upload(client)
+        return client
+
+    def test_the_staleness_knob_is_gone_but_the_warning_is_not(self, loaded, app):
+        """Nobody tunes "warn me after N days". The default still drives the
+        banner that says how old your newest report is."""
+        html = loaded.get("/settings").get_data(as_text=True)
+        assert "Warn me after" not in html
+        assert "staleness_days" not in html
+
+        with app.app_context():
+            from app.models import Settings
+
+            assert db.session.query(Settings).one().staleness_days == 7
+
+    def test_setup_links_to_the_four_pages_you_set_up_once(self, loaded):
+        html = loaded.get("/settings").get_data(as_text=True)
+        for label in ("Edit timetable", "Calendar", "Checkpoints", "Subjects"):
+            assert label in html, f"{label} tile missing from Settings"
+        for path in ("/timetable", "/calendar", "/checkpoints", "/subjects"):
+            assert f'href="{path}"' in html
+
+    def test_per_subject_limits_no_longer_have_their_own_box(self, loaded):
+        html = loaded.get("/settings").get_data(as_text=True)
+        assert "Per-subject limits" not in html
+
+
+class TestSubjectsPage:
+    @pytest.fixture()
+    def loaded(self, client):
+        register(client)
+        upload(client)
+        return client
+
+    def test_one_subject_saves_on_its_own(self, loaded, app):
+        """Renaming one course shouldn't depend on finding a button three
+        screens down."""
+        with app.app_context():
+            subject_id = db.session.query(Subject).filter_by(code="DS").one().id
+
+        resp = loaded.put(f"/api/subjects/{subject_id}", json={"code": "DSA"})
+        assert resp.status_code == 200
+        assert resp.get_json()["subject"]["code"] == "DSA"
+
+        with app.app_context():
+            subject = db.session.get(Subject, subject_id)
+            assert subject.code == "DSA"
+            # The fields the request left out are untouched, not cleared.
+            assert subject.canonical_name
+
+    def test_a_clashing_code_is_refused_the_same_way_either_route(self, loaded, app):
+        with app.app_context():
+            rows = db.session.query(Subject).order_by(Subject.code).all()
+            first, second = rows[0].id, rows[1].id
+            taken = rows[0].code
+
+        resp = loaded.put(f"/api/subjects/{second}", json={"code": taken})
+        assert resp.status_code == 422
+        assert "already uses" in resp.get_json()["errors"]["code"]
+
+        with app.app_context():
+            assert db.session.get(Subject, second).code != taken
+            assert db.session.get(Subject, first).code == taken
+
+    def test_another_users_subject_is_not_editable(self, app, client):
+        register(client, "first@example.com")
+        upload(client)
+        with app.app_context():
+            subject_id = db.session.query(Subject).first().id
+
+        other = app.test_client()
+        register(other, "second@example.com")
+        assert other.put(f"/api/subjects/{subject_id}",
+                         json={"code": "MINE"}).status_code == 404
+
+    def test_the_page_drops_the_filler_and_names_the_link_for_the_page(self, loaded):
+        html = loaded.get("/subjects").get_data(as_text=True)
+        assert "Shown in tables" not in html
+        assert "Blank uses the default" not in html
+        assert "Every lecture" not in html
+        assert "Overview" in html
 
 
 class TestUserIsolation:
@@ -316,7 +426,7 @@ class TestUserIsolation:
     def test_settings_are_per_user(self, app, client):
         register(client, "first@example.com")
         client.post("/settings", data={
-            "subject_limit": "90", "overall_limit": "95", "staleness_days": "2"})
+            "subject_limit": "90", "overall_limit": "95"})
 
         other = app.test_client()
         register(other, "second@example.com")
@@ -327,3 +437,113 @@ def test_users_table_stays_clean(app, client):
     register(client)
     with app.app_context():
         assert db.session.query(User).count() == 1
+
+
+class TestPredictions:
+    """Guesses at unmarked lectures feed the real numbers, and a fresh report
+    always overrules them."""
+
+    @pytest.fixture()
+    def loaded(self, client):
+        register(client)
+        upload(client)
+        return client
+
+    def _a_pending_lecture(self, app):
+        with app.app_context():
+            from app.services import UNKNOWN_STATUSES
+
+            row = (
+                db.session.query(LectureInstance)
+                .filter(LectureInstance.status.in_(UNKNOWN_STATUSES))
+                .filter_by(is_vanished=False)
+                .first()
+            )
+            return row.id, row.subject_id
+
+    def test_a_guess_moves_the_lecture_between_buckets(self, loaded, app):
+        lecture_id, subject_id = self._a_pending_lecture(app)
+
+        before = loaded.get("/api/dashboard").get_json()
+        subject_before = next(s for s in before["subjects"] if s["id"] == subject_id)
+
+        resp = loaded.put(f"/api/lectures/{lecture_id}/prediction",
+                          json={"predicted": "P"})
+        assert resp.status_code == 200
+
+        after = loaded.get("/api/dashboard").get_json()
+        subject_after = next(s for s in after["subjects"] if s["id"] == subject_id)
+
+        assert subject_after["pending"] == subject_before["pending"] - 1
+        assert subject_after["worst_pct"] > subject_before["worst_pct"]
+
+    def test_guessing_absent_never_flatters_the_worst_case(self, loaded, app):
+        """Worst case already assumes absent, so an 'A' guess must not improve
+        anything — if it did, the arithmetic would be double-counting."""
+        lecture_id, subject_id = self._a_pending_lecture(app)
+
+        before = loaded.get("/api/dashboard").get_json()
+        loaded.put(f"/api/lectures/{lecture_id}/prediction", json={"predicted": "A"})
+        after = loaded.get("/api/dashboard").get_json()
+
+        b = next(s for s in before["subjects"] if s["id"] == subject_id)
+        a = next(s for s in after["subjects"] if s["id"] == subject_id)
+        assert a["worst_pct"] == b["worst_pct"]
+        assert a["can_miss"] <= b["can_miss"]
+
+    def test_a_guess_can_be_taken_back(self, loaded, app):
+        lecture_id, subject_id = self._a_pending_lecture(app)
+        before = loaded.get("/api/dashboard").get_json()
+
+        loaded.put(f"/api/lectures/{lecture_id}/prediction", json={"predicted": "P"})
+        loaded.delete(f"/api/lectures/{lecture_id}/prediction")
+
+        after = loaded.get("/api/dashboard").get_json()
+        assert after["overall"]["worst_pct"] == before["overall"]["worst_pct"]
+
+    def test_a_marked_lecture_cannot_be_guessed_at(self, loaded, app):
+        """Overwriting fact with opinion is the one thing this must never do."""
+        with app.app_context():
+            marked = (
+                db.session.query(LectureInstance).filter_by(status="P").first()
+            )
+            lecture_id = marked.id
+        resp = loaded.put(f"/api/lectures/{lecture_id}/prediction",
+                          json={"predicted": "A"})
+        assert resp.status_code == 409
+
+    def test_a_report_that_resolves_the_lecture_retires_the_guess(self, loaded, app):
+        """The guess is read through a join on the status, so reality wins
+        without anything having to delete it."""
+        lecture_id, _ = self._a_pending_lecture(app)
+        loaded.put(f"/api/lectures/{lecture_id}/prediction", json={"predicted": "P"})
+
+        with app.app_context():
+            from app.services import predictions_for
+            from app.models import User
+
+            user = db.session.get(User, 1)
+            assert lecture_id in predictions_for(user)
+
+            # The college marks it — as absent, the opposite of the guess.
+            db.session.get(LectureInstance, lecture_id).status = "A"
+            db.session.commit()
+            assert lecture_id not in predictions_for(user)
+
+    def test_only_your_own_lectures_can_be_guessed_at(self, app, client):
+        register(client, "first@example.com")
+        upload(client)
+        with app.app_context():
+            from app.services import UNKNOWN_STATUSES
+
+            lecture_id = (
+                db.session.query(LectureInstance)
+                .filter(LectureInstance.status.in_(UNKNOWN_STATUSES))
+                .first()
+            ).id
+
+        other = app.test_client()
+        register(other, "second@example.com")
+        resp = other.put(f"/api/lectures/{lecture_id}/prediction",
+                         json={"predicted": "P"})
+        assert resp.status_code == 404

@@ -60,7 +60,35 @@
 </div>
 {% endif %}
 
+{% if advanced_ready and stats %}
+<h2 class="section-title">What if I skip more?</h2>
+<div class="card" style="margin-bottom:var(--sp-6)">
+  {# Asked on demand rather than on load: it costs a projection over the whole
+     remaining timetable, and most visits here are to fix a lecture's status. #}
+  <button type="button" class="btn btn--sm" id="ladder-toggle"
+          data-subject="{{ subject.id }}" aria-expanded="false" aria-controls="ladder">
+    Show me
+  </button>
+  <div id="ladder" style="margin-top:var(--sp-4)"></div>
+</div>
+{% endif %}
+
 <h2 class="section-title">Every lecture</h2>
+{% if pending_count %}
+<div class="banner banner--info" style="margin-bottom:var(--sp-4)">
+  <div class="banner__body">
+    <div class="banner__title">
+      {{ pending_count }} unmarked {{ 'lecture' if pending_count == 1 else 'lectures' }} still to guess at
+    </div>
+    <div class="banner__text">
+      Say what each will probably be and every number here uses it. A guess of
+      <strong>Absent</strong> won't move the worst case — that already assumes
+      you missed it — but a guess of <strong>Present</strong> will, so only use
+      it where you actually turned up. A fresh report always overrules a guess.
+    </div>
+  </div>
+</div>
+{% endif %}
 <div class="card">
   <div class="lecture-list">
     {% for lecture in lectures %}
@@ -68,9 +96,25 @@
       <span class="lecture__when">
         {{ lecture.on_date|long_date }} · {{ lecture.start_time|clock }}–{{ lecture.end_time|clock }}
       </span>
-      <span class="badge badge--{{ lecture.status|status_tone }}">{{ lecture.status|status_word }}</span>
+      <span class="badge badge--{{ lecture.status|status_tone }}">
+        {{ lecture.status|status_word }}
+        {% if predictions.get(lecture.id) %}
+          · guessed {{ predictions[lecture.id] }}
+        {% endif %}
+      </span>
       {% if lecture.is_vanished %}
         <span class="badge badge--neutral">Vanished</span>
+      {% elif lecture.status in unknown_statuses %}
+        {# Unmarked: let the student say what it will probably be. #}
+        <span class="guess" role="group" aria-label="What will this be?">
+          {% for value, label in (('P', 'Present'), ('A', 'Absent')) %}
+            <button type="button" class="guess__btn js-guess"
+                    data-lecture="{{ lecture.id }}" data-value="{{ value }}"
+                    aria-pressed="{{ 'true' if predictions.get(lecture.id) == value else 'false' }}">
+              {{ label }}
+            </button>
+          {% endfor %}
+        </span>
       {% elif history.get(lecture.id) %}
         <span class="lecture__trail">
           {% for change in history[lecture.id] %}{{ change.from_status }}→{{ change.to_status }}{% if not loop.last %} · {% endif %}{% endfor %}
@@ -88,4 +132,10 @@
 <div class="row" style="margin-top:var(--sp-5)">
   <a class="btn btn--ghost" href="{{ url_for('core.dashboard') }}">← Back to today</a>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/predictions.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ladder.js') }}"></script>
+<script src="{{ url_for('static', filename='js/subject.js') }}"></script>
 {% endblock %}

@@ -33,6 +33,11 @@ a:hover { background: var(--acc-yellow); }
 :focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
 /* ---- Buttons ------------------------------------------------------------- */
+/* Any `display` a component sets beats the UA's rule for the `hidden`
+   attribute, which is how a hidden .btn stayed on screen. Nothing here wants
+   that, so hidden wins everywhere. */
+[hidden] { display: none !important; }
+
 .btn {
   display: inline-flex; align-items: center; gap: var(--sp-2);
   font-family: var(--font-label); font-weight: 700;
@@ -98,6 +103,12 @@ a:hover { background: var(--acc-yellow); }
 .badge--pending { background: var(--pending-soft); }
 .badge--pending::before { background: var(--pending-fill); }
 .badge--neutral { background: var(--soft-cyan); }
+/* Lecture type is a fact about the subject, not a verdict on it, so it gets
+   its own quiet palette rather than borrowing safe/warn/danger. */
+.badge--type-theory    { background: var(--soft-cyan); }
+.badge--type-practical { background: var(--soft-green); }
+.badge--type-tutorial  { background: var(--soft-orange); }
+.badge--type-unknown   { background: var(--paper); }
 
 /* ---- Verdict chips (GO/SKIP day strip) ------------------------------------ */
 .day-strip { display: flex; gap: var(--sp-3); overflow-x: auto; padding: var(--sp-2) var(--sp-1) var(--sp-4); }
@@ -120,7 +131,7 @@ a:hover { background: var(--acc-yellow); }
 }
 .verdict--skip   { background: var(--safe-fill); }
 .verdict--skip   .verdict__tag { background: var(--card); }
-.verdict--part   { background: var(--warn-fill); }
+.verdict--partial { background: var(--warn-fill); }
 .verdict--go     { background: var(--danger-fill); }
 .verdict--off    { background: var(--paper); color: var(--ink-muted); box-shadow: none; border-style: dashed; }
 .verdict--today  { box-shadow: var(--shadow-lg); position: relative; }
@@ -190,7 +201,6 @@ table.subjects { width: 100%; border-collapse: collapse; }
 .banner--danger { background: var(--danger-fill); }
 .banner--info   { background: var(--info-fill); }
 .banner--success{ background: var(--safe-fill); }
-.banner__icon { font-size: var(--text-2xl); line-height: 1; }
 .banner__body { flex: 1; }
 .banner__title { font-family: var(--font-label); font-weight: 700;
   font-size: var(--text-sm); text-transform: uppercase; letter-spacing: var(--tracking-label); }
@@ -252,7 +262,6 @@ table.subjects { width: 100%; border-collapse: collapse; }
 }
 .dropzone:hover, .dropzone.is-over { transform: translate(-2px,-2px);
   box-shadow: var(--shadow-lg); background: var(--acc-cyan); border-style: solid; }
-.dropzone__icon { font-size: 40px; }
 .dropzone__title { font-family: var(--font-display); font-size: var(--text-xl); margin-top: var(--sp-2); }
 .dropzone__hint { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--ink-muted); }
 
@@ -281,6 +290,40 @@ table.subjects { width: 100%; border-collapse: collapse; }
   border: var(--border); border-radius: var(--radius-md);
   box-shadow: 4px 4px 0 var(--acc-purple);
   padding: var(--sp-3) var(--sp-5); font-weight: 700; font-size: var(--text-sm); }
+.toast--danger { box-shadow: 4px 4px 0 var(--danger-fill); }
+.toast__text { flex: 1; }
+.toast__action { font-family: var(--font-label); font-size: var(--text-xs);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  background: transparent; color: var(--ink-inverse); cursor: pointer;
+  border: var(--bw) solid var(--ink-inverse); border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3); }
+.toast__action:hover:not(:disabled) { background: var(--ink-inverse); color: var(--ink); }
+.toast__action:disabled { opacity: .5; cursor: default; }
+.toast__action--undo { border-color: var(--acc-purple); color: var(--acc-purple); }
+.toast__action--undo:hover:not(:disabled) { background: var(--acc-purple); color: var(--ink); }
+
+/* Bottom-centred on mobile, bottom-left on desktop — never over the nav, and
+   never over the primary action of a form the toast is reporting on. */
+.toast-host { position: fixed; z-index: var(--z-toast);
+  left: var(--sp-4); right: var(--sp-4); bottom: var(--sp-4);
+  display: flex; flex-direction: column-reverse; align-items: stretch;
+  gap: var(--sp-2); pointer-events: none; }
+.toast-host > * { pointer-events: auto; }
+@media (min-width: 640px) {
+  .toast-host { right: auto; max-width: 420px; align-items: flex-start; }
+}
+.toast { animation: toast-in var(--dur) var(--ease); }
+.toast.is-leaving { opacity: 0; transform: translate(0, 4px);
+  transition: opacity var(--dur), transform var(--dur); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(0, 8px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+  .toast.is-leaving { transition: none; }
+}
+
 .modal { background: var(--card); border: var(--border-heavy);
   border-radius: var(--radius-lg); box-shadow: var(--shadow-xl);
   padding: var(--sp-6); max-width: 480px; }

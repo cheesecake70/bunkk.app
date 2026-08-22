@@ -3,70 +3,140 @@
 
 {% block content %}
 <div class="page-head">
-  <div class="eyebrow">Inferred from your reports</div>
-  <h1>Your week</h1>
+  <div class="eyebrow">Your week</div>
+  <h1>Timetable</h1>
   <p class="page-head__sub">
-    Bunkr worked this out from the lectures already in your ledger — nothing to type in.
-    Untick anything that isn't really weekly, then save.
+    Click an empty column to add a class or a break; click a block to change it.
+    Every change saves itself. Free periods between classes fill in as breaks —
+    they never touch the maths, they're what makes "leave before lunch" worth
+    an extra hour.
   </p>
 </div>
 
-{% if not candidates %}
+{% if not subjects %}
   <div class="card empty">
-    <div class="empty__icon">🗓️</div>
-    <h2>Not enough history yet</h2>
-    <p class="text-muted">Upload a report covering a few weeks and the pattern will show up here.</p>
-    <a class="btn btn--primary" href="{{ url_for('core.upload') }}">Upload a report</a>
+    <h2>No subjects yet</h2>
+    <p class="text-muted" style="margin:0 auto var(--sp-5)">
+      Upload a report first — Bunkr fills in most of this grid from it.
+    </p>
+    <a class="btn btn--primary" href="{{ url_for('core.upload') }}">Upload your PDF</a>
   </div>
 {% else %}
-<form method="post">
+
+{% if inferred %}
   <div class="banner banner--info" style="margin-bottom:var(--sp-5)">
-    <div class="banner__icon">💡</div>
     <div class="banner__body">
-      <div class="banner__title">Ticked = seen in {{ confident_weeks|default(2) }}+ different weeks</div>
+      <div class="banner__title">Drafted from your reports</div>
       <div class="banner__text">
-        Slots seen only once are listed unticked — they were probably one-off extra classes.
+        These are the patterns Bunkr saw repeating across several weeks, with
+        the free periods between them filled in as breaks. Fix anything wrong,
+        add what it couldn't see, then save to accept it. After that, every
+        change saves itself.
       </div>
     </div>
   </div>
+{% endif %}
 
-  {% for day_index in range(7) %}
-    {% set day_slots = candidates | selectattr('slot.weekday', 'equalto', day_index) | list %}
-    {% if day_slots %}
-    <div class="card" style="margin-bottom:var(--sp-4)">
-      <div class="row--between" style="margin-bottom:var(--sp-3)">
-        <h3 style="margin:0">{{ weekdays[day_index] }}</h3>
-        <span class="badge badge--neutral">{{ day_slots|length }} slots</span>
+<form method="post" id="grid-form">
+  <div class="tt" id="tt">
+    {% for label in weekdays %}
+      {% set wd = loop.index0 %}
+      <div class="tt__col" data-weekday="{{ wd }}">
+        <div class="tt__dow">{{ label }}</div>
+        <div class="tt__blocks" data-weekday="{{ wd }}">
+          {% for entry in entries if entry.weekday == wd %}
+            <div class="tt__block tt__block--{{ entry.kind }}"
+                 data-kind="{{ entry.kind }}"
+                 data-weekday="{{ entry.weekday }}"
+                 data-start="{{ entry.start_time.isoformat() }}"
+                 data-end="{{ entry.end_time.isoformat() }}"
+                 data-subject="{{ entry.subject_id or '' }}"
+                 data-label="{{ entry.label or '' }}"
+                 tabindex="0" role="button">
+              <span class="tt__time mono">{{ entry.start_time|clock }}–{{ entry.end_time|clock }}</span>
+              <span class="tt__name">
+                {% if entry.kind == 'break' %}
+                  {{ entry.label or 'Break' }}
+                {% else %}
+                  {{ subjects_by_id[entry.subject_id].code if entry.subject_id in subjects_by_id else '—' }}
+                {% endif %}
+              </span>
+            </div>
+          {% endfor %}
+        </div>
+        <button type="button" class="tt__add" data-weekday="{{ wd }}">+ Add</button>
       </div>
-      {% for candidate in day_slots %}
-        {% set subject = subjects.get(candidate.slot.subject_id) %}
-        {% if subject %}
-        <label class="limit-row" style="grid-template-columns:auto 1fr auto;cursor:pointer">
-          <input type="checkbox" name="slot"
-                 value="{{ candidate.slot.subject_id }}|{{ candidate.slot.weekday }}|{{ candidate.slot.start_time }}|{{ candidate.slot.end_time }}"
-                 {% if (candidate.slot.subject_id, candidate.slot.weekday, candidate.slot.start_time) in active or (not has_existing and candidate.is_confident) %}checked{% endif %}
-                 style="width:22px;height:22px">
-          <span>
-            <b class="mono">{{ candidate.slot.start_time|clock }}–{{ candidate.slot.end_time|clock }}</b>
-            &nbsp;{{ subject.code }}
-            <span class="text-muted" style="font-size:var(--text-sm)">· {{ subject.lecture_type }}</span>
-          </span>
-          {% if candidate.is_confident %}
-            <span class="badge badge--safe">{{ candidate.weeks_seen }} weeks</span>
-          {% else %}
-            <span class="badge badge--warn">Seen once</span>
-          {% endif %}
-        </label>
-        {% endif %}
-      {% endfor %}
-    </div>
-    {% endif %}
-  {% endfor %}
+    {% endfor %}
+  </div>
 
-  <div class="row" style="margin-top:var(--sp-5)">
-    <button class="btn btn--primary btn--lg" type="submit">Save timetable</button>
-    <a class="btn btn--ghost" href="{{ url_for('core.dashboard') }}">Cancel</a>
+  {# The grid posts as parallel arrays; js/timetable.js keeps these in step
+     with the blocks above, and they are the only thing the server reads. #}
+  <div id="grid-fields" hidden></div>
+
+  {# js/timetable.js replaces the submit button with a saved-status line, since
+     with JavaScript on, every Done has already written the grid through. The
+     button stays in the markup so the page still saves without it — and stays
+     visible while this is only a draft, because a grid nobody has looked at
+     shouldn't commit itself. #}
+  <div class="row" style="margin-top:var(--sp-5)" id="tt-actions"
+       {% if inferred %}data-draft="1"{% endif %}>
+    <button class="btn btn--primary" type="submit">Save timetable</button>
+    <a class="btn btn--ghost" href="{{ url_for('core.calendar') }}">Semester calendar</a>
   </div>
 </form>
+
+{# ---- The editor, shown for both adding and editing a block ------------- #}
+<dialog class="modal" id="block-editor">
+  <form method="dialog">
+    <div class="modal__title" id="editor-title">Add to the grid</div>
+
+    <div class="field">
+      <label for="editor-kind">What is it?</label>
+      <select class="select" id="editor-kind">
+        <option value="class">A class</option>
+        <option value="break">A break</option>
+      </select>
+    </div>
+
+    <div class="field" id="editor-subject-field">
+      <label for="editor-subject">Subject</label>
+      <select class="select" id="editor-subject">
+        {% for subject in subjects %}
+          <option value="{{ subject.id }}">{{ subject.code }} · {{ subject.canonical_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field" id="editor-label-field" hidden>
+      <label for="editor-label">Name <span class="text-muted">(optional)</span></label>
+      <input class="input" id="editor-label" maxlength="60" placeholder="Lunch">
+    </div>
+
+    <div class="row" style="gap:var(--sp-3)">
+      <div class="field" style="margin:0;flex:1">
+        <label for="editor-start">Starts</label>
+        <input class="input input--mono" id="editor-start" type="time" required>
+      </div>
+      <div class="field" style="margin:0;flex:1">
+        <label for="editor-end">Ends</label>
+        <input class="input input--mono" id="editor-end" type="time" required>
+      </div>
+    </div>
+    <div class="field__error" id="editor-error" hidden></div>
+
+    <div class="row--between" style="margin-top:var(--sp-5)">
+      <button class="btn btn--danger btn--sm" type="button" id="editor-delete" hidden>Delete</button>
+      <div class="row" style="gap:var(--sp-2)">
+        <button class="btn btn--ghost" type="button" id="editor-cancel">Cancel</button>
+        <button class="btn btn--primary" type="button" id="editor-save">Done</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/timetable.js') }}"></script>
 {% endblock %}

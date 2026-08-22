@@ -6,12 +6,8 @@
 <title>{% block title %}Bunkr{% endblock %}</title>
 <meta name="theme-color" content="#F4D738">
 <meta name="description" content="Know in ten seconds whether you can skip college today.">
-<link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
 <link rel="icon" href="{{ url_for('static', filename='icons/favicon-32.png') }}" sizes="32x32">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Bunkr">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Lexend+Mega:wght@500;700&family=Public+Sans:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -24,17 +20,28 @@
 {% if current_user.is_authenticated %}
 <nav class="nav">
   <a href="{{ url_for('core.dashboard') }}" class="nav__logo" style="text-decoration:none">BUNKR</a>
+  {% set setup_pages = ('core.timetable', 'core.calendar', 'core.checkpoints',
+                        'core.add_checkpoint', 'core.subjects', 'core.settings') %}
   <div class="nav__links">
     <a class="nav__link {% if request.endpoint == 'core.dashboard' %}is-active{% endif %}"
        href="{{ url_for('core.dashboard') }}">Today</a>
+    <a class="nav__link {% if request.endpoint == 'core.plan' %}is-active{% endif %}"
+       href="{{ url_for('core.plan') }}">Plan</a>
     <a class="nav__link {% if request.endpoint == 'core.upload' %}is-active{% endif %}"
        href="{{ url_for('core.upload') }}">Upload</a>
-    <a class="nav__link {% if request.endpoint in ('core.plan', 'core.timetable', 'core.calendar') %}is-active{% endif %}"
-       href="{{ url_for('core.plan') }}">Plan</a>
-    <a class="nav__link {% if request.endpoint == 'core.history' %}is-active{% endif %}"
-       href="{{ url_for('core.history') }}">History</a>
-    <a class="nav__link {% if request.endpoint == 'core.settings' %}is-active{% endif %}"
-       href="{{ url_for('core.settings') }}">Settings</a>
+
+    {# <details> rather than a scripted menu: it opens on tap, closes on Escape,
+       and is reachable by keyboard without a line of JavaScript. #}
+    <details class="nav__menu">
+      <summary class="nav__link {% if request.endpoint in setup_pages %}is-active{% endif %}">Setup</summary>
+      <div class="nav__menu-items">
+        <a class="nav__menu-item" href="{{ url_for('core.timetable') }}">Timetable</a>
+        <a class="nav__menu-item" href="{{ url_for('core.calendar') }}">Semester calendar</a>
+        <a class="nav__menu-item" href="{{ url_for('core.checkpoints') }}">Checkpoints</a>
+        <a class="nav__menu-item" href="{{ url_for('core.subjects') }}">Subjects</a>
+        <a class="nav__menu-item" href="{{ url_for('core.settings') }}">Settings</a>
+      </div>
+    </details>
   </div>
   <span style="flex:1"></span>
   <form method="post" action="{{ url_for('auth.logout') }}" style="margin:0">
@@ -44,11 +51,11 @@
 {% endif %}
 
 <main class="wrap">
-  {% with messages = get_flashed_messages() %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-      {% for message in messages %}
-        <div class="banner banner--success" style="margin-bottom:var(--sp-5)">
-          <div class="banner__icon">✓</div>
+      {% for category, message in messages %}
+        <div class="banner banner--{{ 'danger' if category == 'error' else 'success' }}"
+             style="margin-bottom:var(--sp-5)" role="status">
           <div class="banner__body"><div class="banner__text">{{ message }}</div></div>
         </div>
       {% endfor %}
@@ -58,7 +65,22 @@
   {% block content %}{% endblock %}
 </main>
 
-<script src="{{ url_for('static', filename='js/pwa.js') }}"></script>
+<script>
+  /* <details> keeps itself open until its own summary is clicked again, which
+     leaves the Setup menu hanging over the page after you navigate past it. */
+  (function () {
+    var menu = document.querySelector(".nav__menu");
+    if (!menu) return;
+    document.addEventListener("click", function (event) {
+      if (!menu.contains(event.target)) menu.removeAttribute("open");
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") menu.removeAttribute("open");
+    });
+  })();
+</script>
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/toast.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

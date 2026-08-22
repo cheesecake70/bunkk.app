@@ -57,6 +57,24 @@ STATUS_TONE = {
 }
 
 
+#: One word per day verdict, for every surface. Kept here rather than in the
+#: templates because the labels lived in three places — the Today hero, the day
+#: strip and plan.js — and had already drifted: the same verdict read "GO" in
+#: one and "Must go" in another.
+VERDICT_WORDS = {
+    "skip": "Skip",
+    "partial": "Part skip",
+    "go": "Can't skip",
+    "off": "No class",
+}
+
+
+def verdict_word(value) -> str:
+    """'Can't skip'. Accepts the enum or its value."""
+    key = getattr(value, "value", value)
+    return VERDICT_WORDS.get(key, str(key))
+
+
 def status_word(code: str) -> str:
     return STATUS_WORDS.get(code, code)
 
@@ -75,4 +93,8 @@ def register(app) -> None:
         clock=clock,
         status_word=status_word,
         status_tone=status_tone,
+        verdict_word=verdict_word,
     )
+    # The strip repaints itself after a plan changes, so the client needs the
+    # same labels the server rendered. Exposed as data rather than duplicated.
+    app.jinja_env.globals["VERDICT_WORDS"] = VERDICT_WORDS

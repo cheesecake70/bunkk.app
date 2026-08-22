@@ -32,7 +32,6 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     #: Chosen at sign-up; how you're known in the app.
     username = db.Column(db.String(32), unique=True, nullable=False, index=True)
-    name = db.Column(db.String(120))
     #: Claimed from the first uploaded report. Unique: one student, one account —
     #: otherwise two people could ingest the same report and diverge. NULL until
     #: a report is uploaded, and SQLite allows many NULLs in a unique column.
@@ -59,29 +58,6 @@ class Settings(db.Model):
     subject_limit = db.Column(db.Integer, nullable=False, default=70)
     staleness_days = db.Column(db.Integer, nullable=False, default=7)
     advanced_mode = db.Column(db.Boolean, nullable=False, default=False)
-    #: Phase 3 — the morning nudge. Hour is local to the server (single-tenant
-    #: for now; a per-user timezone joins this when the app opens up).
-    notify_enabled = db.Column(db.Boolean, nullable=False, default=False)
-    notify_hour = db.Column(db.Integer, nullable=False, default=7)
-
-
-class PushSubscription(db.Model):
-    """One browser's Web Push endpoint. A user may install on several devices."""
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
-    endpoint = db.Column(db.String(500), nullable=False, unique=True)
-    p256dh = db.Column(db.String(200), nullable=False)
-    auth = db.Column(db.String(100), nullable=False)
-    user_agent = db.Column(db.String(255))
-    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
-    last_sent_at = db.Column(db.DateTime)
-
-    def as_info(self) -> dict:
-        return {
-            "endpoint": self.endpoint,
-            "keys": {"p256dh": self.p256dh, "auth": self.auth},
-        }
 
 
 class Semester(db.Model):
@@ -182,12 +158,25 @@ class TimetableVersion(db.Model):
 
 
 class TimetableSlot(db.Model):
+    """One block in the weekly grid — a class, or a break between classes.
+
+    Breaks carry no subject and never reach the attendance maths: `active_slots`
+    filters on `kind` before building the engine's `Slot` list, so a free period
+    cannot change how many lectures are left. They exist so the grid looks like
+    the day actually looks, which is what makes "leave after 2pm" believable.
+    """
+
     id = db.Column(db.Integer, primary_key=True)
     version_id = db.Column(db.Integer, db.ForeignKey("timetable_version.id"), nullable=False, index=True)
     weekday = db.Column(db.Integer, nullable=False)  # 0=Mon .. 6=Sun
     start_time = db.Column(db.Time, nullable=False)
     end_time = db.Column(db.Time, nullable=False)
-    subject_id = db.Column(db.Integer, db.ForeignKey("subject.id"), nullable=False)
+    kind = db.Column(db.String(10), nullable=False, default="class")   # class|break
+    #: NULL for a break.
+    subject_id = db.Column(db.Integer, db.ForeignKey("subject.id"))
+    label = db.Column(db.String(60))          # "Lunch", breaks only
+
+    subject = db.relationship("Subject")
 
 
 class Holiday(db.Model):
@@ -196,17 +185,91 @@ class Holiday(db.Model):
     semester_id = db.Column(db.Integer, db.ForeignKey("semester.id"), nullable=False, index=True)
     on_date = db.Column(db.Date, nullable=False)
     name = db.Column(db.String(120))          # "Raksha Bandhan", optional
-    kind = db.Column(db.String(10), nullable=False, default="holiday")  # holiday|swap
-    swap_weekday = db.Column(db.Integer)      # for kind=swap: which weekday's timetable runs
 
     __table_args__ = (
         db.UniqueConstraint("semester_id", "on_date", name="uq_holiday_date"),
     )
 
 
+class LecturePrediction(db.Model):
+    """Your guess at how an unmarked lecture will resolve.
+
+    Guesses feed the real numbers: a lecture you mark "probably present" counts
+    as present everywhere, because that is usually the truth and worst-case
+    arithmetic over a big pile of NU makes the app useless in the meantime.
+
+    The trade is stated plainly in the UI, because it is real: a wrong guess can
+    turn a genuine DANGER into a green verdict. Two things keep it honest —
+    every guessed lecture is badged wherever it moves a number, and Overview
+    always carries the untouched worst case beside it.
+
+    Keyed on the lecture, and read through a join that requires the status to
+    still be unknown, so a fresh report retires the guess automatically without
+    anything having to delete it.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    lecture_id = db.Column(db.Integer, db.ForeignKey("lecture_instance.id"),
+                           nullable=False, index=True)
+    predicted = db.Column(db.String(1), nullable=False)        # P | A
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "lecture_id", name="uq_prediction_per_lecture"),
+    )
+
+
+class Checkpoint(db.Model):
+    """A date the college actually audits attendance on.
+
+    It carries no percentage of its own — an audit applies the same limits as
+    everything else. What a checkpoint changes is the *horizon*, not the bar:
+    lectures after it can't help you clear it, so they drop out of the maths
+    until it passes.
+
+    The semester end is an implicit final checkpoint and is deliberately not
+    stored here; `Semester.end_date` stays its single source of truth, so the
+    two can never drift apart and deleting the last row can't leave the app
+    without a horizon.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    semester_id = db.Column(db.Integer, db.ForeignKey("semester.id"),
+                            nullable=False, index=True)
+    on_date = db.Column(db.Date, nullable=False)
+    label = db.Column(db.String(120))          # "Mid-sem audit", optional
+
+    __table_args__ = (
+        db.UniqueConstraint("semester_id", "on_date", name="uq_checkpoint_date"),
+    )
+
+
 class PlannedAbsence(db.Model):
+    """A future lecture you have decided to miss.
+
+    Identity is three-tier, so the same day can hold as much or as little
+    detail as the decision actually had:
+
+        subject_id NULL, start_time NULL  ->  the whole day
+        subject_id set,  start_time NULL  ->  every lecture of that subject
+        subject_id set,  start_time set   ->  exactly that one lecture
+
+    The third tier exists because a timetable really can run two lectures of
+    one subject in a day, and being able to plan only one of them is not a
+    detail the app gets to round off.
+    """
+
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     on_date = db.Column(db.Date, nullable=False)
-    subject_id = db.Column(db.Integer, db.ForeignKey("subject.id"))  # NULL = whole day
+    subject_id = db.Column(db.Integer, db.ForeignKey("subject.id"))
+    start_time = db.Column(db.Time)
     note = db.Column(db.String(200))
+
+    subject = db.relationship("Subject")
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "on_date", "subject_id", "start_time",
+                            name="uq_planned_absence"),
+    )

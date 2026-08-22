@@ -18,12 +18,33 @@
 
 <label class="dropzone" id="dropzone">
   <input type="file" id="file" accept="application/pdf,.pdf">
-  <div class="dropzone__icon">📄</div>
   <div class="dropzone__title">Drop your attendance PDF</div>
   <div class="dropzone__hint" id="hint">detailed report · semester-start → today</div>
 </label>
 
 <div id="result" class="upload-result stack" aria-live="polite"></div>
+
+{% if coverage.covered %}
+<div class="card card--cyan" style="margin-top:var(--sp-6)">
+  <div class="eyebrow" style="margin-bottom:var(--sp-2)">Covered so far</div>
+  <div class="row">
+    {% for range in coverage.covered %}
+      <span class="badge badge--neutral">{{ range }}</span>
+    {% endfor %}
+    {% for gap in coverage.gaps %}
+      <span class="badge badge--warn">Missing {{ gap }}</span>
+    {% endfor %}
+    {% if coverage.trailing_gap %}
+      <span class="badge badge--pending">Not yet uploaded {{ coverage.trailing_gap }}</span>
+    {% endif %}
+  </div>
+  {% if coverage.is_stale %}
+    <p class="text-muted" style="font-size:var(--text-sm);margin-bottom:0">
+      Your newest report is {{ coverage.stale_days }} days old.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="card card--cyan" style="margin-top:var(--sp-6)">
   <h3 style="margin-bottom:var(--sp-2)">Where do I get this?</h3>

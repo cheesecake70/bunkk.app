@@ -1,0 +1,18 @@
+{# The day sheet: what's on, and which of it you're planning to miss.
+
+   Shared by the semester calendar and the plan strip so there is one way to
+   commit an absence. Pass `holiday_button=true` where marking the whole day off
+   is also in scope; the plan strip is about spending budget, not editing the
+   academic calendar, so it leaves that out. #}
+<dialog class="modal" id="day-sheet">
+  <div class="modal__title" id="sheet-title">Day</div>
+  <div id="sheet-body"></div>
+  <div class="row--between" style="margin-top:var(--sp-5)">
+    {% if holiday_button %}
+      <button class="btn btn--sm btn--ghost" type="button" id="sheet-holiday">Mark a holiday</button>
+    {% else %}
+      <span></span>
+    {% endif %}
+    <button class="btn btn--primary" type="button" id="sheet-close">Done</button>
+  </div>
+</dialog>

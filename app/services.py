@@ -15,6 +15,7 @@ from . import db
 from .models import (
     LectureChange,
     LectureInstance,
+    LecturePrediction,
     ReportSnapshot,
     Semester,
     Settings,
@@ -52,8 +53,97 @@ def subject_limit(subject: Subject, settings: Settings) -> int:
     return subject.custom_limit if subject.custom_limit is not None else settings.subject_limit
 
 
-def counts_by_subject(user: User) -> dict[int, Counts]:
+def apply_subject_edits(subject: Subject, siblings: list[Subject],
+                        values: dict) -> dict[str, str]:
+    """Validate and apply one subject's edits, returning field -> message.
+
+    Lives here rather than in the page that grew it so the batch form on
+    /subjects and the per-card PUT on /api/subjects/<id> can never drift into
+    disagreeing about what a valid subject is. Keys are bare field names
+    ("name", "code", "custom_limit"); the form route prefixes them with the row
+    id itself.
+
+    `values` is a mapping the caller has already narrowed to this subject. A key
+    it omits is left untouched — that is what lets a partial edit stay partial
+    instead of reading every absent field as "cleared".
+    """
+    errors: dict[str, str] = {}
+
+    if "name" in values:
+        name = (values.get("name") or "").strip()
+        if not name:
+            errors["name"] = "A subject needs a name."
+        elif len(name) > 200:
+            errors["name"] = "That name is too long."
+        else:
+            subject.canonical_name = name
+
+    if "code" in values:
+        code = (values.get("code") or "").strip()
+        if not code:
+            errors["code"] = "A short code keeps the tables readable."
+        elif len(code) > 20:
+            errors["code"] = "Keep the short code under 20 characters."
+        else:
+            # Codes label every table and chip in the app, so two subjects
+            # sharing one would make the numbers unreadable rather than merely
+            # untidy.
+            clash = any(
+                other.id != subject.id and (other.code or "").lower() == code.lower()
+                for other in siblings
+            )
+            if clash:
+                errors["code"] = "Another subject already uses that short code."
+            else:
+                subject.code = code
+
+    if "custom_limit" in values:
+        raw = str(values.get("custom_limit") or "").strip()
+        if not raw:
+            subject.custom_limit = None        # blank means "use the default"
+        else:
+            try:
+                limit = int(raw)
+            except (TypeError, ValueError):
+                errors["custom_limit"] = "Must be a whole number."
+            else:
+                if not 0 <= limit <= 100:
+                    errors["custom_limit"] = "Must be between 0 and 100."
+                else:
+                    subject.custom_limit = limit
+
+    return errors
+
+
+def predictions_for(user: User) -> dict[int, str]:
+    """lecture_id -> 'P'|'A', for lectures the college still hasn't marked.
+
+    The join is what retires a guess: once a report flips NU to a real status
+    the row stops being returned, so a fresh upload always wins without
+    anything needing to be deleted.
+    """
+    rows = (
+        db.session.query(LecturePrediction.lecture_id, LecturePrediction.predicted)
+        .join(LectureInstance, LectureInstance.id == LecturePrediction.lecture_id)
+        .filter(LecturePrediction.user_id == user.id)
+        .filter(LectureInstance.is_vanished.is_(False))
+        .filter(LectureInstance.status.in_(UNKNOWN_STATUSES))
+        .all()
+    )
+    return {lecture_id: predicted for lecture_id, predicted in rows}
+
+
+def counts_by_subject(user: User, *, use_predictions: bool = True) -> dict[int, Counts]:
     """Fold the ledger into per-subject tallies.
+
+    This is the single place a status becomes a `Counts`, which is why guesses
+    are applied here: every number in the app is built from these three buckets,
+    so one change propagates everywhere without the engine knowing predictions
+    exist at all.
+
+    Pass `use_predictions=False` for the untouched worst case — Overview shows
+    it beside the guessed figures so the safe reading is never more than a
+    glance away.
 
     Lectures flagged `is_vanished` are excluded: the portal no longer reports
     them, so counting them would put our totals out of step with the college's
@@ -64,12 +154,15 @@ def counts_by_subject(user: User) -> dict[int, Counts]:
         .filter_by(user_id=user.id, is_vanished=False)
         .all()
     )
+    guesses = predictions_for(user) if use_predictions else {}
+
     tally: dict[int, dict[str, int]] = {}
     for row in rows:
         bucket = tally.setdefault(row.subject_id, {"p": 0, "a": 0, "n": 0})
-        if row.status in PRESENT_STATUSES:
+        status = guesses.get(row.id, row.status)
+        if status in PRESENT_STATUSES:
             bucket["p"] += 1
-        elif row.status in ABSENT_STATUSES:
+        elif status in ABSENT_STATUSES:
             bucket["a"] += 1
         else:
             bucket["n"] += 1
@@ -79,9 +172,9 @@ def counts_by_subject(user: User) -> dict[int, Counts]:
     }
 
 
-def dashboard_for(user: User) -> Dashboard:
+def dashboard_for(user: User, *, use_predictions: bool = True) -> Dashboard:
     settings = settings_for(user)
-    counts = counts_by_subject(user)
+    counts = counts_by_subject(user, use_predictions=use_predictions)
     subjects = (
         db.session.query(Subject)
         .filter_by(user_id=user.id, active=True)
