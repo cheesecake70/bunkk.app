@@ -16,6 +16,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -35,12 +36,18 @@ def _sqlite_pragmas(dbapi_connection, connection_record):
     single upload blocks every other user's page. The busy timeout turns the
     remaining write contention into a short wait instead of an error, and
     foreign keys stop a deleted account leaving orphaned lectures behind.
+
+    The busy timeout is the length of the longest write queue the app will
+    wait out. Writes are rare (an upload, a plan) and reads never wait on them
+    in WAL mode, so a long wait costs nothing on a normal day — while a short
+    one turned a hostel's worth of simultaneous uploads into "database is
+    locked" errors under load testing. Kept under gunicorn's request timeout.
     """
     if not isinstance(dbapi_connection, sqlite3.Connection):
         return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA busy_timeout=30000")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
@@ -107,11 +114,13 @@ def create_app(config_object=None) -> Flask:
 
     from .account import bp as account_bp
     from .api import bp as api_bp
-    from .auth import bp as auth_bp
+    from . import auth
     from .routes import bp as core_bp
 
+    auth.init_app(app)
+
     app.register_blueprint(core_bp)
-    app.register_blueprint(auth_bp)
+    app.register_blueprint(auth.bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(account_bp)
 
@@ -124,9 +133,9 @@ def _check_environment(app: Flask) -> None:
     """Refuse to serve real users on a configuration that only looks complete.
 
     Every one of these fails quietly otherwise: the dev secret forges sessions,
-    a missing DATABASE_URL lands the ledger in the repo directory, no mail
-    server turns forgot-password into a promise nobody keeps, and no trusted
-    host lets a forged Host header write the reset link.
+    a missing DATABASE_URL lands the ledger in the repo directory, no Google
+    client means nobody can sign in at all, and no trusted host lets a forged
+    Host header write the OAuth redirect URL.
     """
     from config import DEV_SECRET_KEY
 
@@ -151,8 +160,13 @@ def _check_environment(app: Flask) -> None:
 
 
 def _configure_logging(app: Flask) -> None:
-    """Production logs go wherever gunicorn's do; nothing is dropped at INFO."""
-    if app.debug or app.testing:
+    """Logs go wherever gunicorn's do, and nothing is dropped at INFO.
+
+    INFO matters outside production too: with no mail server configured the
+    reset and verification links are *logged* rather than sent, and a dev
+    server started without the debugger left them at a level nobody saw.
+    """
+    if app.testing:
         return
     gunicorn_logger = logging.getLogger("gunicorn.error")
     if gunicorn_logger.handlers:
@@ -209,6 +223,23 @@ def _register_error_handlers(app: Flask) -> None:
         elif error.code == 429:
             message = "Too many requests. Wait a minute and try again."
         return jsonify(error=message), error.code
+
+    @app.errorhandler(OperationalError)
+    def database_busy(error):
+        # The one operational error worth a sentence of its own: SQLite's
+        # single writer is still busy after the whole busy timeout. That is a
+        # queue, not a bug, and the right answer is "try again in a moment".
+        if "locked" not in str(error.orig or error).lower():
+            raise error
+        db.session.rollback()
+        app.logger.warning("Write lock still held after busy timeout on %s %s",
+                           request.method, request.path)
+        message = "Bunkr is busy saving other students' reports. Try again in a few seconds."
+        headers = {"Retry-After": "5"}
+        if _wants_json():
+            return jsonify(error=message), 503, headers
+        return (f"<!doctype html><title>Busy</title><h1>One moment</h1><p>{message}</p>",
+                503, headers)
 
     if app.testing:
         # Tests want the traceback, not a tidy 500.

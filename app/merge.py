@@ -195,6 +195,13 @@ def ingest_report(
 def _ingest_report(user, report, *, digest, data, filename) -> MergeResult:
     _check_identity(user, report)
 
+    # Everything that can be read before the first write, is: SQLite has one
+    # writer at a time, and the lock is held from the first INSERT to the
+    # commit, so every read done inside that window is a read every other
+    # upload waits for.
+    from .services import subject_worst_percentages   # local: avoids a cycle
+    before = subject_worst_percentages(user)
+
     semester = _get_or_create_semester(user, report.header.academic_session)
 
     path = _store_pdf(user, data, digest, filename) if data is not None else "(unsaved)"
@@ -225,7 +232,7 @@ def _ingest_report(user, report, *, digest, data, filename) -> MergeResult:
             proposals=proposals,
         )
 
-    result = _apply(user, snapshot, report, mapping)
+    result = _apply(user, snapshot, report, mapping, before=before)
     result.new_subjects = created
     db.session.commit()
     return result
@@ -478,11 +485,17 @@ def _apply(
     snapshot: ReportSnapshot,
     report: ParsedReport,
     mapping: dict[str, Subject],
+    before: dict[str, float | None] | None = None,
 ) -> MergeResult:
-    """The upsert itself. Assumes every raw name in `report` is in `mapping`."""
+    """The upsert itself. Assumes every raw name in `report` is in `mapping`.
+
+    `before` is the pre-merge worst-case per subject, read by the caller before
+    it took the write lock; computed here only for callers that didn't.
+    """
     from .services import subject_worst_percentages   # local: avoids a cycle
 
-    before = subject_worst_percentages(user)
+    if before is None:
+        before = subject_worst_percentages(user)
 
     existing = {
         (l.subject_id, l.on_date, l.start_time): l

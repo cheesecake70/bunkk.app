@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
+from conftest import google_sign_in
 
 import app.planning as planning_module
 from app import create_app, db
@@ -53,7 +54,7 @@ def client(app, monkeypatch):
     monkeypatch.setattr(routes_module, "date", FrozenDate)
 
     client = app.test_client()
-    client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
+    google_sign_in(client, "m@example.com", "muser")
     client.post(
         "/api/reports",
         data={"report": (GOLDEN.open("rb"), "report.pdf")},
@@ -974,9 +975,7 @@ class TestPartialDays:
         real = client.get(f"/api/day/{monday}").get_json()["lectures"][0]
 
         other = app.test_client()
-        other.post("/register", data={
-            "email": "other@example.com", "username": "other",
-            "password": "password123", "confirm_password": "password123"})
+        google_sign_in(other, "other@example.com", "other")
         resp = other.post("/api/absences/batch", json={
             "date": monday, "lectures": [real]})
         assert resp.status_code == 404

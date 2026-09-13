@@ -8,6 +8,7 @@ from datetime import date, time
 from pathlib import Path
 
 import pytest
+from conftest import google_sign_in
 from reportlab_stub import make_detailed_pdf
 
 from app import create_app, db
@@ -42,12 +43,8 @@ def client(app):
     return app.test_client()
 
 
-def register(client, email="m@example.com", password="password123", username=None):
-    handle = username or re.sub(r"[^A-Za-z0-9_.]", "", email.split("@")[0]).ljust(3, "x")
-    return client.post("/register", data={
-        "email": email, "username": handle,
-        "password": password, "confirm_password": password,
-    }, follow_redirects=False)
+def register(client, email="m@example.com", username=None):
+    return google_sign_in(client, email, username)
 
 
 def upload(client, path=GOLDEN, filename="report.pdf"):
@@ -64,29 +61,26 @@ class TestAuth:
         assert resp.status_code == 302
         assert resp.headers["Location"].endswith("/upload")
 
-    def test_register_rejects_a_short_password(self, client):
-        resp = client.post("/register", data={"email": "a@b.com", "password": "short"})
-        assert resp.status_code == 400
-        assert b"at least 8 characters" in resp.data.lower()
+    def test_register_is_just_the_login_page(self, client):
+        resp = client.get("/register")
+        assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
 
-    def test_register_rejects_a_duplicate_email(self, client):
+    def test_login_page_offers_google_only(self, client):
+        html = client.get("/login").get_data(as_text=True)
+        assert "/login/google" in html
+        assert 'type="password"' not in html
+
+    def test_an_unverified_google_address_is_refused(self, client):
+        resp = google_sign_in(client, "m@example.com", verified=False)
+        assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
+        assert client.get("/").status_code == 302
+
+    def test_signing_in_again_lands_on_the_dashboard(self, client):
         register(client)
         client.post("/logout")
-        resp = client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
-        assert resp.status_code == 400
-        assert b"already has an account" in resp.data
-
-    def test_login_with_a_wrong_password_fails(self, client):
-        register(client)
-        client.post("/logout")
-        resp = client.post("/login", data={"email": "m@example.com", "password": "nope12345"})
-        assert resp.status_code == 401
-
-    def test_login_then_dashboard(self, client):
-        register(client)
-        client.post("/logout")
-        resp = client.post("/login", data={"email": "m@example.com", "password": "password123"})
+        resp = register(client)
         assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/")
         assert client.get("/").status_code == 200
 
     @pytest.mark.parametrize("path", ["/", "/upload", "/settings"])
@@ -463,7 +457,6 @@ class TestUserIsolation:
 
             stranger = User(email="nobody@example.com", username="nobody",
                             session_token="t-nobody")
-            stranger.set_password("password123")
             db.session.add(stranger)
             db.session.commit()
 

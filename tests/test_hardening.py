@@ -12,11 +12,12 @@ from datetime import date, time
 from pathlib import Path
 
 import pytest
+from conftest import google_sign_in
+from unittest.mock import patch
 from reportlab_stub import make_detailed_pdf
 
 import config
 from app import create_app, db
-from app.mail import OUTBOX
 from app.models import ReportSnapshot, Semester, Subject, User
 
 GOLDEN = Path(__file__).parent / "golden" / "detailed_jul_aug.pdf"
@@ -39,12 +40,25 @@ def app(tmp_path):
         db.drop_all()
 
 
-def register(client, email="m@example.com", username="muser", password="password123",
-             headers=None, **extra):
-    return client.post("/register", data={
-        "email": email, "username": username,
-        "password": password, "confirm_password": password, **extra,
-    }, headers=headers or {})
+def register(client, email="m@example.com", username="muser", headers=None):
+    return google_sign_in(client, email, username, headers=headers)
+
+
+#: `/login/google` would otherwise fetch Google's discovery document.
+GOOGLE_AWAY = patch(
+    "authlib.integrations.flask_client.apps.FlaskOAuth2App.authorize_redirect",
+    return_value=("", 302, {"Location": "https://accounts.google.com/o/x"}),
+)
+
+
+def rename(client, username, headers=None, **extra):
+    return client.post("/account/profile", data={"username": username, **extra},
+                       headers=headers or {})
+
+
+def current_username(app):
+    with app.app_context():
+        return db.session.query(User).one().username
 
 
 def upload(client, data: bytes, filename="report.pdf"):
@@ -79,33 +93,34 @@ class TestCsrf:
 
     def test_a_form_without_a_token_changes_nothing(self, app):
         client = app.test_client()
-        resp = register(client)
+        register(client)
+        resp = rename(client, "changed")
         assert resp.status_code == 302            # bounced, with a flash
-        with app.app_context():
-            assert db.session.query(User).count() == 0
+        assert current_username(app) == "muser"
 
     def test_the_bounce_never_leaves_the_site(self, app):
         """The Referer is attacker-controlled on exactly the request that fails
         this check, so it must not become an open redirect."""
         client = app.test_client()
-        off_site = register(client, headers={"Referer": "https://evil.example/x"})
+        register(client)
+        off_site = rename(client, "changed", headers={"Referer": "https://evil.example/x"})
         assert off_site.headers["Location"].endswith("/")
         assert "evil" not in off_site.headers["Location"]
-        on_site = register(client, headers={"Referer": "http://localhost/register?x=1"})
-        assert on_site.headers["Location"].endswith("/register?x=1")
+        on_site = rename(client, "changed", headers={"Referer": "http://localhost/settings?x=1"})
+        assert on_site.headers["Location"].endswith("/settings?x=1")
 
     def test_a_form_with_the_token_goes_through(self, app):
         client = app.test_client()
-        token = token_from(client.get("/register").get_data(as_text=True))
-        resp = register(client, csrf_token=token)
-        assert resp.status_code == 302 and "/upload" in resp.headers["Location"]
-        with app.app_context():
-            assert db.session.query(User).count() == 1
+        register(client)
+        token = token_from(client.get("/settings").get_data(as_text=True))
+        resp = rename(client, "changed", csrf_token=token)
+        assert resp.status_code == 302 and "/settings" in resp.headers["Location"]
+        assert current_username(app) == "changed"
 
     def test_the_json_api_needs_the_header(self, app):
         client = app.test_client()
-        token = token_from(client.get("/register").get_data(as_text=True))
-        register(client, csrf_token=token)
+        register(client)
+        token = token_from(client.get("/settings").get_data(as_text=True))
 
         bare = client.post("/api/absences", json={"date": "2030-01-01"})
         assert bare.status_code == 400
@@ -117,8 +132,7 @@ class TestCsrf:
 
     def test_every_rendered_form_carries_the_token(self, app):
         client = app.test_client()
-        token = token_from(client.get("/register").get_data(as_text=True))
-        register(client, csrf_token=token)
+        register(client)
         for path in ("/settings", "/calendar", "/checkpoints", "/timetable", "/subjects"):
             html = client.get(path).get_data(as_text=True)
             forms = re.findall(r'<form method="post"[^>]*>', html)
@@ -145,40 +159,20 @@ class TestRateLimits:
             db.session.remove()
             db.drop_all()
 
-    def test_failed_logins_are_throttled_per_client(self, app):
+    def test_starting_a_sign_in_is_throttled_per_client(self, app):
         client = app.test_client()
-        codes = [
-            client.post("/login", data={"email": f"ghost{i}@x.com", "password": "nope"}).status_code
-            for i in range(31)
-        ]
-        assert codes[:30] == [401] * 30
-        assert codes[30] == 429
-        page = client.post("/login", data={"email": "x@x.com", "password": "nope"})
-        assert page.status_code == 429 and "Too many attempts" in page.get_data(as_text=True)
+        with GOOGLE_AWAY:
+            codes = [client.get("/login/google").status_code for _ in range(61)]
+        assert codes[:60] == [302] * 60
+        assert codes[60] == 429
 
-    def test_successful_logins_do_not_spend_the_allowance(self, app):
+    def test_finishing_a_sign_in_is_not(self, app):
         """A campus NAT puts a whole hostel behind one address; sign-ins that
         work must never be what locks the next person out."""
         client = app.test_client()
-        register(client)
-        client.post("/logout")
-        for _ in range(40):
-            resp = client.post("/login", data={"email": "m@example.com",
-                                               "password": "password123"})
-            assert resp.status_code == 302
+        for _ in range(70):
+            assert register(client).status_code == 302
             client.post("/logout")
-
-    def test_forgot_password_is_throttled(self, app):
-        client = app.test_client()
-        codes = [client.post("/forgot", data={"email": "who@x.com"}).status_code
-                 for i in range(21)]
-        assert codes[:20] == [302] * 20 and codes[20] == 429
-
-    def test_registration_is_throttled(self, app):
-        client = app.test_client()
-        codes = [register(client, email=f"u{i}@x.com", username=f"user{i}").status_code
-                 for i in range(61)]
-        assert 429 in codes and codes.index(429) == 60
 
     def test_reads_are_never_throttled(self, app):
         client = app.test_client()
@@ -268,6 +262,18 @@ class TestResponseHardening:
         assert resp.status_code == 401
         assert resp.is_json
 
+    def test_a_lost_write_lock_is_a_503_with_a_retry_hint(self, app):
+        from sqlalchemy.exc import OperationalError
+
+        @app.get("/api/locked")
+        def locked():
+            raise OperationalError("INSERT ...", {}, Exception("database is locked"))
+
+        resp = app.test_client().get("/api/locked")
+        assert resp.status_code == 503
+        assert resp.headers["Retry-After"] == "5"
+        assert "busy" in resp.get_json()["error"].lower()
+
     def test_an_unexpected_error_is_a_json_500_not_a_traceback(self, tmp_path):
         class Live(config.TestConfig):
             TESTING = False
@@ -298,22 +304,18 @@ class TestTrustedHosts:
             db.session.remove()
             db.drop_all()
 
-    def test_a_forged_host_cannot_shape_the_reset_link(self, app):
+    def test_a_forged_host_cannot_shape_the_oauth_redirect(self, app):
+        """The redirect URI is built from the Host header; Google checks it
+        against the registered one, but we refuse the forgery before that."""
         client = app.test_client()
-        register(client, headers={"Host": "bunkr.test"})
-        client.post("/logout", headers={"Host": "bunkr.test"})
+        with GOOGLE_AWAY as go:
+            forged = client.get("/login/google", headers={"Host": "evil.example"})
+            assert forged.status_code == 400
+            assert not go.called
 
-        forged = client.post("/forgot", data={"email": "m@example.com"},
-                             headers={"Host": "evil.example"})
-        assert forged.status_code == 400
-        assert app.extensions.get(OUTBOX, []) == []
-
-        real = client.post("/forgot", data={"email": "m@example.com"},
-                           headers={"Host": "bunkr.test"})
-        assert real.status_code == 302
-        body = app.extensions[OUTBOX][-1].get_content()
-        assert "http://bunkr.test/reset/" in body
-        assert "evil" not in body
+            real = client.get("/login/google", headers={"Host": "bunkr.test"})
+            assert real.status_code == 302
+            assert go.call_args.args[0] == "http://bunkr.test/auth/google/callback"
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +324,8 @@ class TestTrustedHosts:
 
 
 class TestProductionGuard:
-    REQUIRED = ("SECRET_KEY", "DATABASE_URL", "MAIL_SERVER", "MAIL_DEFAULT_SENDER",
-                "BUNKR_TRUSTED_HOSTS")
+    REQUIRED = ("SECRET_KEY", "DATABASE_URL", "GOOGLE_CLIENT_ID",
+                "GOOGLE_CLIENT_SECRET", "BUNKR_TRUSTED_HOSTS")
 
     def test_missing_variables_are_named(self, monkeypatch):
         for name in self.REQUIRED:
@@ -345,8 +347,8 @@ class TestProductionGuard:
     def test_a_complete_environment_boots(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SECRET_KEY", "y" * 64)
         monkeypatch.setenv("DATABASE_URL", "sqlite://")
-        monkeypatch.setenv("MAIL_SERVER", "smtp.example")
-        monkeypatch.setenv("MAIL_DEFAULT_SENDER", "Bunkr <no-reply@example.com>")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "id.apps.googleusercontent.com")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "GOCSPX-x")
         monkeypatch.setenv("BUNKR_TRUSTED_HOSTS", "bunkr.example, www.bunkr.example")
         importlib.reload(config)
         try:

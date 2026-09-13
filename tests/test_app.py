@@ -26,15 +26,14 @@ def test_models_create_and_query(app):
     with app.app_context():
         college = College(name="SVKM")
         db.session.add(college)
-        user = User(email="test@example.com", username="tester", college=college)
-        user.set_password("s3cret")
+        user = User(email="test@example.com", username="tester", college=college,
+                    google_sub="sub-1")
         db.session.add(user)
         db.session.flush()
         db.session.add(Settings(user_id=user.id))
         db.session.commit()
 
         fetched = db.session.query(User).filter_by(email="test@example.com").one()
-        assert fetched.check_password("s3cret")
-        assert not fetched.check_password("wrong")
+        assert fetched.google_sub == "sub-1"
         assert fetched.college.default_subject_limit == 70
         assert db.session.get(Settings, fetched.id).overall_limit == 75

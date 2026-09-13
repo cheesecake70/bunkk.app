@@ -18,7 +18,7 @@
         <label for="username">Username</label>
         <input class="input" id="username" name="username"
                value="{{ current_user.username }}" required>
-        <div class="field__hint">Letters, numbers, dots or underscores. You can sign in with this or your email.</div>
+        <div class="field__hint">Letters, numbers, dots or underscores. How you're known in Bunkr; you sign in with Google.</div>
       </div>
       <div class="row" style="margin-bottom:var(--sp-4)">
         <span class="badge badge--neutral">{{ current_user.email }}</span>
@@ -33,32 +33,16 @@
     </form>
   </div>
 
-  {# ---- Password ------------------------------------------------------- #}
+  {# ---- Sessions ------------------------------------------------------ #}
   <div class="card">
-    <h3>Password</h3>
+    <h3>Signed-in devices</h3>
     <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
-      Changing it signs out every other device you're signed in on. This one
-      stays put.
+      You sign in with Google, so there's no password to change. If you used a
+      shared laptop, sign every other device out. This one stays put.
     </p>
-    <form method="post" action="{{ url_for('account.change_password') }}">
+    <form method="post" action="{{ url_for('account.sign_out_everywhere') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="field">
-        <label for="current_password">Current password</label>
-        <input class="input" id="current_password" name="current_password"
-               type="password" autocomplete="current-password" required>
-      </div>
-      <div class="field">
-        <label for="new_password">New password</label>
-        <input class="input" id="new_password" name="new_password"
-               type="password" autocomplete="new-password" required>
-        <div class="field__hint">At least 8 characters.</div>
-      </div>
-      <div class="field">
-        <label for="confirm_new_password">Confirm new password</label>
-        <input class="input" id="confirm_new_password" name="confirm_password"
-               type="password" autocomplete="new-password" required>
-      </div>
-      <button class="btn btn--primary" type="submit">Change password</button>
+      <button class="btn btn--primary" type="submit">Sign out other devices</button>
     </form>
   </div>
 
@@ -138,8 +122,9 @@
     <form method="post" action="{{ url_for('account.delete') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field" style="max-width:320px">
-        <label for="password">Confirm with your password</label>
-        <input class="input" id="password" name="password" type="password" required>
+        <label for="confirm">Type your username to confirm</label>
+        <input class="input" id="confirm" name="confirm" autocomplete="off"
+               placeholder="{{ current_user.username }}" required>
       </div>
       <button class="btn btn--danger" type="submit">Delete everything</button>
     </form>

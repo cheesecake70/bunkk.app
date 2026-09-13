@@ -64,16 +64,20 @@ portal's own summary report for all 14 subjects.
   weekends get no column unless the timetable uses them.
 - **Phones get a bottom tab bar** (the top nav wrapped into three rows), and the
   timetable shows one day at a time.
-- **Change and reset your password**; sessions carry a random token rather than
-  the row id, so a stale cookie can't reach an account that reused it.
+- **Sign out every other device** from Settings; sessions carry a random token
+  rather than the row id, so a stale cookie can't reach an account that reused it.
 - Holidays can be marked a **range** at a time; a whole-day absence on a day with
   no classes is refused rather than silently stored.
 
 **Multi-user** — the schema was multi-tenant from Phase 0, so this is about
 everything that only becomes a question with a second person:
 
-- **Open registration**: email, username and a password typed twice. You can
-  sign in with either the username or the email.
+- **Google sign-in, and nothing else.** There is no password anywhere: the
+  first "Continue with Google" creates the account, with a username suggested
+  from the address that you can change in Settings. Google vouches for the
+  email, so there is no verification link to click either. Accounts are keyed
+  on Google's stable subject id, so renaming your address at Google keeps your
+  ledger.
 - **One student, one account.** A student number is claimed by the first
   account to upload it and is unique thereafter, so uploading a friend's PDF
   can no longer silently claim their identity and build a second, diverging
@@ -81,18 +85,16 @@ everything that only becomes a question with a second person:
 - **SQLite made fit for concurrency** (ADR-2): WAL so readers aren't blocked by
   a writer, a busy timeout so contention waits instead of erroring, and
   foreign keys enforced so a deleted account can't orphan a ledger.
-- **Login lockout** after repeated failures, with identical wording for unknown
-  emails and wrong passwords so the form can't enumerate who has an account.
-- **Leaving is easy**: a password-confirmed deletion that removes every row and
-  the raw PDFs.
+- **Leaving is easy**: type your username to confirm and every row and the
+  raw PDFs go.
 - Production refuses to boot with the development `SECRET_KEY` — forgeable
   sessions stop being a dev nicety once other people have accounts — or
-  without a mail server, a database URL and the hostnames it answers for.
-- **Hardened for a public domain**: CSRF tokens on every form and fetch, per-IP
-  rate limits on login / registration / forgot-password, `Secure` and
-  `SameSite` on both cookies, trusted-host checking so a forged `Host` header
-  can't shape a reset link, security headers on every response, and JSON
-  errors from `/api` (a corrupt PDF is a 422, never a 500).
+  without a Google OAuth client, a database URL and the hostnames it answers for.
+- **Hardened for a public domain**: CSRF tokens on every form and fetch, a
+  per-IP rate limit on starting a sign-in, `Secure` and `SameSite` on both
+  cookies, trusted-host checking so a forged `Host` header can't shape the
+  OAuth redirect URL, security headers on every response, and JSON errors
+  from `/api` (a corrupt PDF is a 422, never a 500).
 
 Worst case drives every number on screen: a pending lecture counts as absent
 until the college says otherwise, so a green verdict is always safe. The day
@@ -109,7 +111,31 @@ python -m pytest tests/ -q        # should be all green
 python run.py                     # http://127.0.0.1:5000
 ```
 
-Register at `/register`, then drop a detailed-report PDF on `/upload`.
+Sign in with Google at `/login` (set up below), or run with
+`BUNKR_DEV_LOGIN=1` and use `/login/dev` to sign in as any address without
+Google. Then drop a detailed-report PDF on `/upload`.
+
+### Google sign-in
+
+Bunkr signs people in through Google (OpenID Connect via Authlib) and has no
+passwords of its own. It needs one OAuth client from Google Cloud Console:
+
+1. <https://console.cloud.google.com/> → create a project (or pick one).
+2. **APIs & Services → OAuth consent screen**: External, app name "Bunkr",
+   your support email, scopes `openid`, `email`, `profile`. While the app is
+   in *Testing* only listed test users can sign in; **Publish** it so any
+   Google account can.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**,
+   type *Web application*. Add an **Authorised redirect URI** for every host
+   you serve from — the path is always `/auth/google/callback`:
+   `http://localhost:5000/auth/google/callback` for dev,
+   `https://bunkr.example.com/auth/google/callback` in production.
+4. Copy the client ID and secret into `.env` as `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET`.
+
+Google only vouches for verified addresses, and Bunkr refuses any claim
+without `email_verified`. An account that predates Google sign-in is adopted
+by the first Google sign-in with the same address.
 
 ## Layout
 
@@ -118,8 +144,8 @@ app/                 Flask app (factory, models, auth, pages, JSON API, merge)
   merge.py           snapshot -> LectureLedger fold, diffs, gap flags
   services.py        the only place DB rows become engine inputs (user-scoped)
   planning.py        advanced mode: timetable, calendar, wallet, day verdicts
-  account.py         profile, password, account deletion
-  mail.py            the one outgoing email: a password-reset link
+  auth.py            Google sign-in (Authlib), the only way in
+  account.py         profile, sign-out-everywhere, account deletion
   cache.py           per-request memoisation, dropped on write
 report_parser/       pure PDF -> typed data (no Flask/DB imports)
 attendance_engine/   pure math: budgets, percentages, coverage
@@ -129,6 +155,7 @@ static/js/           html.js fmt.js api.js toast.js commit.js (shared),
                      then one file per page: today, plan, daysheet, calendar,
                      timetable, subject(s), predictions, ladder, upload
 tools/make_icons.py  regenerates the favicon and touch icon from the design tokens
+tools/loadtest/      seed N students into a scratch DB, then drive them (see file docstrings)
 docs/                design system, launch checklist
 gunicorn.conf.py     production server settings
 tests/golden/        real portal PDFs used as parser ground truth
@@ -145,12 +172,12 @@ gunicorn -c gunicorn.conf.py run:app
 ```
 
 `.env` is loaded automatically. With `BUNKR_CONFIG=config.ProdConfig` the app
-refuses to start unless `SECRET_KEY`, `DATABASE_URL`, `MAIL_SERVER`,
-`MAIL_DEFAULT_SENDER` and `BUNKR_TRUSTED_HOSTS` are all set — each of those
+refuses to start unless `SECRET_KEY`, `DATABASE_URL`, `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` and `BUNKR_TRUSTED_HOSTS` are all set — each of those
 fails quietly otherwise. Put nginx or Caddy in front with HTTPS and pass
 `X-Forwarded-For` / `-Proto` / `-Host`; the app trusts exactly one proxy hop.
 With more than one gunicorn worker, point `RATELIMIT_STORAGE_URI` at Redis so
-the login throttle is shared rather than per worker.
+the sign-in throttle is shared rather than per worker.
 
 **Upgrading past `c7f1a4b82e50` signs everyone out once.** Sessions used to
 carry the user's row id, and SQLite hands a deleted row's id to the next account

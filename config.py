@@ -38,15 +38,14 @@ class BaseConfig:
     RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
     RATELIMIT_HEADERS_ENABLED = True
 
-    # Password-reset mail. Without MAIL_SERVER the link is logged instead of
-    # sent, which is all a single-machine dev setup needs.
-    MAIL_SERVER = os.environ.get("MAIL_SERVER")
-    MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))
-    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
-    MAIL_USE_TLS = _bool("MAIL_USE_TLS", "1")
-    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER",
-                                         "Bunkr <no-reply@localhost>")
+    # Google sign-in (the only way in). Created in Google Cloud Console; see
+    # README "Google sign-in". Missing in dev, the login button 404s at Google
+    # with a clear message rather than the app refusing to boot.
+    GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+    #: /login/dev — sign in as any address without Google. Only honoured in
+    #: DEBUG (see auth.dev_login); a laptop without an OAuth client needs it.
+    DEV_LOGIN = _bool("BUNKR_DEV_LOGIN", "0")
 
     #: Environment variables `create_app` insists on. Empty outside production.
     REQUIRED_ENV: tuple[str, ...] = ()
@@ -64,7 +63,8 @@ class DevConfig(BaseConfig):
 class TestConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"  # in-memory
-    MAIL_SERVER = None                     # mail goes to the outbox, not a socket
+    GOOGLE_CLIENT_ID = "test-client-id"
+    GOOGLE_CLIENT_SECRET = "test-client-secret"
     # Both are exercised by dedicated tests that switch them back on; every
     # other test would otherwise have to carry a token and share a counter.
     WTF_CSRF_ENABLED = False
@@ -86,13 +86,13 @@ class ProdConfig(BaseConfig):
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
     # Hosts this app will answer for. Anything else is refused before a
-    # password-reset link can be built from a forged Host header.
+    # OAuth redirect URL can be built from a forged Host header.
     TRUSTED_HOSTS = [
         h.strip() for h in os.environ.get("BUNKR_TRUSTED_HOSTS", "").split(",")
         if h.strip()
     ] or None
     REQUIRED_ENV = (
-        "SECRET_KEY", "DATABASE_URL", "MAIL_SERVER", "MAIL_DEFAULT_SENDER",
+        "SECRET_KEY", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
         "BUNKR_TRUSTED_HOSTS",
     )
     # The boot-time guard lives in create_app: Flask's from_object reads class

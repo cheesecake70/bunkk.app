@@ -10,8 +10,6 @@ import secrets
 from datetime import datetime, timezone
 
 from flask_login import UserMixin
-from werkzeug.security import check_password_hash, generate_password_hash
-
 from . import db
 
 
@@ -34,7 +32,10 @@ class College(db.Model):
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
+    #: Google's stable subject id for this person. The address can change at
+    #: Google; this never does. NULL only for an account that predates Google
+    #: sign-in and has not signed in since (auth._user_for attaches it).
+    google_sub = db.Column(db.String(64), unique=True, index=True)
     #: Chosen at sign-up; how you're known in the app.
     username = db.Column(db.String(32), unique=True, nullable=False, index=True)
     #: Claimed from the first uploaded report. Unique: one student, one account —
@@ -44,14 +45,14 @@ class User(UserMixin, db.Model):
     roll_no = db.Column(db.String(20))
     college_id = db.Column(db.Integer, db.ForeignKey("college.id"))
     created_at = db.Column(db.DateTime, default=utcnow)
-    #: Brute-force protection; see auth.py for the lockout policy.
-    failed_logins = db.Column(db.Integer, nullable=False, default=0)
-    locked_until = db.Column(db.DateTime)
+    #: When Google vouched for the address. Every account signed in through
+    #: Google has this set; it is kept so nothing that reads it has to change.
+    email_verified_at = db.Column(db.DateTime)
     #: What the session cookie actually holds. SQLite hands a deleted row's id
     #: to the next account created, so a remember-me cookie carrying the id
     #: alone would sign its holder into a stranger's account. A random token
     #: belongs to one account for as long as that account exists, and rotating
-    #: it is how a password change signs the other devices out.
+    #: it is how "sign out everywhere" signs the other devices out.
     session_token = db.Column(db.String(64), unique=True, nullable=False,
                               index=True, default=new_session_token)
 
@@ -61,14 +62,16 @@ class User(UserMixin, db.Model):
         """Flask-Login stores this in the session and the remember-me cookie."""
         return self.session_token
 
+    @property
+    def is_verified(self) -> bool:
+        return self.email_verified_at is not None
+
+    def mark_verified(self) -> None:
+        if self.email_verified_at is None:
+            self.email_verified_at = utcnow()
+
     def rotate_session(self) -> None:
         self.session_token = new_session_token()
-
-    def set_password(self, raw: str) -> None:
-        self.password_hash = generate_password_hash(raw)
-
-    def check_password(self, raw: str) -> bool:
-        return check_password_hash(self.password_hash, raw)
 
 
 class Settings(db.Model):
