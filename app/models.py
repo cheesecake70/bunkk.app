@@ -6,12 +6,17 @@ open (connection-string change + migrations).
 """
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone
 
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import db
+
+
+def new_session_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def utcnow() -> datetime:
@@ -42,8 +47,22 @@ class User(UserMixin, db.Model):
     #: Brute-force protection; see auth.py for the lockout policy.
     failed_logins = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime)
+    #: What the session cookie actually holds. SQLite hands a deleted row's id
+    #: to the next account created, so a remember-me cookie carrying the id
+    #: alone would sign its holder into a stranger's account. A random token
+    #: belongs to one account for as long as that account exists, and rotating
+    #: it is how a password change signs the other devices out.
+    session_token = db.Column(db.String(64), unique=True, nullable=False,
+                              index=True, default=new_session_token)
 
     college = db.relationship("College")
+
+    def get_id(self) -> str:
+        """Flask-Login stores this in the session and the remember-me cookie."""
+        return self.session_token
+
+    def rotate_session(self) -> None:
+        self.session_token = new_session_token()
 
     def set_password(self, raw: str) -> None:
         self.password_hash = generate_password_hash(raw)
@@ -57,22 +76,23 @@ class Settings(db.Model):
     overall_limit = db.Column(db.Integer, nullable=False, default=75)
     subject_limit = db.Column(db.Integer, nullable=False, default=70)
     staleness_days = db.Column(db.Integer, nullable=False, default=7)
-    advanced_mode = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class Semester(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     session_label = db.Column(db.String(80), nullable=False)  # "2026-2027, Semester III"
-    start_date = db.Column(db.Date)      # derived: earliest lecture in ledger
     end_date = db.Column(db.Date)        # the one manual date input (advanced setup)
+    #: Exactly one per user is active: the one the newest report named. Every
+    #: figure on screen is scoped to it, so last term's lectures stop counting
+    #: the moment this term's first report arrives.
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
 
 class Subject(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
-    semester_id = db.Column(db.Integer, db.ForeignKey("semester.id"), nullable=False)
+    semester_id = db.Column(db.Integer, db.ForeignKey("semester.id"), nullable=False, index=True)
     canonical_name = db.Column(db.String(200), nullable=False)
     lecture_type = db.Column(db.String(20), nullable=False)   # Theory/Practical/Tutorial/Unknown
     code = db.Column(db.String(20), nullable=False)           # user-approved short name
@@ -102,6 +122,9 @@ class ReportSnapshot(db.Model):
     """Immutable record of every upload (event-sourcing lite, ADR-4)."""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    #: The semester the report's header named. Coverage and staleness are
+    #: judged per semester, so July's report can't make September look covered.
+    semester_id = db.Column(db.Integer, db.ForeignKey("semester.id"), index=True)
     uploaded_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     period_start = db.Column(db.Date, nullable=False)
     period_end = db.Column(db.Date, nullable=False)
@@ -152,7 +175,7 @@ class LectureChange(db.Model):
 
 class TimetableVersion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    semester_id = db.Column(db.Integer, db.ForeignKey("semester.id"), nullable=False)
+    semester_id = db.Column(db.Integer, db.ForeignKey("semester.id"), nullable=False, index=True)
     valid_from = db.Column(db.Date, nullable=False)
     source = db.Column(db.String(10), nullable=False, default="inferred")  # inferred|manual
 

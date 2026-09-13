@@ -10,10 +10,10 @@ import os
 import shutil
 
 from flask import Blueprint, current_app, flash, redirect, request, url_for
-from flask_login import current_user, login_required, logout_user
+from flask_login import current_user, login_required, login_user, logout_user
 
 from . import db
-from .auth import normalise_username, validate_username
+from .auth import normalise_username, password_error, validate_username
 from .models import (
     Checkpoint,
     CourseAlias,
@@ -55,6 +55,37 @@ def update_profile():
 
     db.session.commit()
     flash("Profile saved.")
+    return redirect(url_for("core.settings"))
+
+
+@bp.post("/password")
+@login_required
+def change_password():
+    """Change the password, and sign every other device out while doing it.
+
+    Rotating the session token is the whole point of the second half: someone
+    changing their password on a shared laptop means "stop being me over
+    there", and only a new token can say that. This browser is re-issued a
+    cookie immediately, so the person doing it stays where they are.
+    """
+    if not current_user.check_password(request.form.get("current_password") or ""):
+        flash("That isn't your current password.", "error")
+        return redirect(url_for("core.settings"))
+
+    password = request.form.get("new_password") or ""
+    problem = password_error(password, request.form.get("confirm_password") or "")
+    if problem:
+        flash(problem[1], "error")
+        return redirect(url_for("core.settings"))
+
+    current_user.set_password(password)
+    current_user.rotate_session()
+    current_user.failed_logins = 0
+    current_user.locked_until = None
+    db.session.commit()
+
+    login_user(current_user, remember=True)
+    flash("Password changed. Any other devices have been signed out.")
     return redirect(url_for("core.settings"))
 
 

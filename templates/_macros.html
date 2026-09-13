@@ -1,0 +1,28 @@
+{# Shared bits of wording that two pages have to agree on. #}
+
+{% macro status_badge(stats, plan) %}
+  {# The wallet's verdict wins wherever there is one: it is the number the
+     "Can miss" column beside it came from, so the badge must agree with it
+     rather than with the ledger-only reading.
+
+     "Tight" on a subject sitting at 100% read as a warning about the
+     percentage, when what it means is "no slack in the budget yet" — which is
+     the normal state of a subject two lectures into term. #}
+  {% set verdict = (plan.verdict if plan else stats.verdict).value %}
+  {% set headroom = plan.budget if plan else stats.can_miss_effective %}
+  {% if verdict == 'safe' %}
+    <span class="badge badge--safe">Safe</span>
+  {% elif verdict == 'warn' %}
+    {% if headroom == 0 %}
+      <span class="badge badge--warn">No slack yet</span>
+    {% else %}
+      <span class="badge badge--warn">Tight</span>
+    {% endif %}
+  {% elif stats.pending_dominated %}
+    <span class="badge badge--pending">{{ stats.counts.unknown }} pending</span>
+  {% elif verdict == 'danger' %}
+    <span class="badge badge--danger">Attend {{ stats.recover_needed }}</span>
+  {% else %}
+    <span class="badge badge--neutral">No data</span>
+  {% endif %}
+{% endmacro %}

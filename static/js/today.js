@@ -73,59 +73,126 @@
     });
   }
 
+  /* The day's own verdict, repainted from the payload rather than reloaded.
+     Committing used to leave a green SKIP hero over a day you had just spent
+     past its budget — the numbers below it moved, the headline didn't. */
+  function paintHero(day) {
+    var hero = document.getElementById("hero");
+    if (!hero || !day) return;
+
+    hero.className = "hero-verdict hero-verdict--" + day.verdict +
+      (day.over_budget ? " is-over" : "");
+
+    var label = hero.querySelector(".hero-verdict__label");
+    if (label) {
+      /* The word underneath already says PLANNED; this line is worth more as
+         the date, or as the warning when there is one. */
+      label.textContent = day.over_budget
+        ? "Planned · over budget"
+        : (hero.dataset.label || label.textContent);
+    }
+
+    var word = hero.querySelector(".hero-verdict__word");
+    if (word) {
+      var words = window.BUNKR_VERDICTS || {};
+      word.textContent = (words[day.verdict] || day.verdict).toUpperCase();
+    }
+
+    var reason = hero.querySelector(".hero-verdict__reason");
+    if (reason) reason.textContent = day.reason || "";
+
+    var meta = hero.querySelector(".hero-verdict__meta");
+    var shape = day.whole_day ? "whole day"
+      : (day.leave_after ? "leaving after " + window.BunkrFmt.time(day.leave_after)
+      : (day.arrive_at ? "arriving by " + window.BunkrFmt.time(day.arrive_at) : ""));
+    if (!meta && shape) {
+      meta = document.createElement("span");
+      meta.className = "hero-verdict__meta";
+      hero.appendChild(meta);
+    }
+    if (meta) meta.textContent = shape;
+  }
+
   function toggle(button) {
     var planned = button.dataset.absenceId;
-    button.disabled = true;
 
-    var request = planned
-      ? window.BunkrApi.del("/api/absences/" + planned)
-      : window.BunkrApi.post("/api/absences", {
-          date: button.dataset.date,
-          subject_id: parseInt(button.dataset.subject, 10),
-          start: button.dataset.start
-        });
+    /* Only a new commitment is worth checking: dropping one can't break
+       anything, and asking "are you sure?" about giving budget back is noise. */
+    var ready = planned ? Promise.resolve(true) : window.BunkrCommit.guard([{
+      date: button.dataset.date,
+      subject_id: parseInt(button.dataset.subject, 10),
+      start: button.dataset.start
+    }]);
 
-    return request.then(function (res) {
-      button.disabled = false;
-      if (!res.ok) {
-        window.BunkrToast.error(res.body.error || "Couldn't change that.");
-        return;
-      }
+    return ready.then(function (go) {
+      if (!go) return;
+      button.disabled = true;
 
-      setState(button, planned ? null : res.body.absence_id);
-      button.dataset.ownAbsence = button.dataset.absenceId || "";
-      repaint(res.body);
+      var request = planned
+        ? window.BunkrApi.del("/api/absences/" + planned)
+        : window.BunkrApi.post("/api/absences", {
+            date: button.dataset.date,
+            subject_id: parseInt(button.dataset.subject, 10),
+            start: button.dataset.start
+          });
 
-      window.BunkrToast.show(
-        planned ? button.dataset.code + " back on"
-                : button.dataset.code + " skip planned",
-        { onUndo: function () { return toggle(button); } }
-      );
+      return request.then(function (res) {
+        button.disabled = false;
+        if (!res.ok) {
+          window.BunkrToast.error(res.body.error || "Couldn't change that.");
+          return;
+        }
+
+        setState(button, planned ? null : res.body.absence_id);
+        button.dataset.ownAbsence = button.dataset.absenceId || "";
+        repaint(res.body);
+        paintHero(res.body.day);
+
+        var undo = function () { return toggle(button); };
+        if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
+          window.BunkrToast.show(
+            planned ? button.dataset.code + " back on"
+                    : button.dataset.code + " skip planned",
+            { onUndo: undo }
+          );
+        }
+      });
     });
   }
 
   function toggleDay(button) {
     var planned = button.dataset.absenceId;
-    button.disabled = true;
+    var ready = planned
+      ? Promise.resolve(true)
+      : window.BunkrCommit.guard([{ date: button.dataset.date }]);
 
-    var request = planned
-      ? window.BunkrApi.del("/api/absences/" + planned)
-      : window.BunkrApi.post("/api/absences", { date: button.dataset.date });
+    return ready.then(function (go) {
+      if (!go) return;
+      button.disabled = true;
 
-    return request.then(function (res) {
-      button.disabled = false;
-      if (!res.ok) {
-        window.BunkrToast.error(res.body.error || "Couldn't change that.");
-        return;
-      }
+      var request = planned
+        ? window.BunkrApi.del("/api/absences/" + planned)
+        : window.BunkrApi.post("/api/absences", { date: button.dataset.date });
 
-      setDayState(button, planned ? null : res.body.absence_id);
-      repaint(res.body);
+      return request.then(function (res) {
+        button.disabled = false;
+        if (!res.ok) {
+          window.BunkrToast.error(res.body.error || "Couldn't change that.");
+          return;
+        }
 
-      window.BunkrToast.show(
-        planned ? "Back on for the whole day" : "Skipping the whole day",
-        { onUndo: function () { return toggleDay(button); } }
-      );
+        setDayState(button, planned ? null : res.body.absence_id);
+        repaint(res.body);
+        paintHero(res.body.day);
+
+        var undo = function () { return toggleDay(button); };
+        if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
+          window.BunkrToast.show(
+            planned ? "Back on for the whole day" : "Skipping the whole day",
+            { onUndo: undo }
+          );
+        }
+      });
     });
   }
 

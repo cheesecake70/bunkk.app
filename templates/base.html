@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>{% block title %}Bunkr{% endblock %}</title>
 <meta name="theme-color" content="#F4D738">
 <meta name="description" content="Know in ten seconds whether you can skip college today.">
@@ -17,11 +18,11 @@
 </head>
 <body>
 
+{% set setup_pages = ('core.timetable', 'core.calendar', 'core.checkpoints',
+                      'core.add_checkpoint', 'core.subjects', 'core.settings') %}
 {% if current_user.is_authenticated %}
 <nav class="nav">
   <a href="{{ url_for('core.dashboard') }}" class="nav__logo" style="text-decoration:none">BUNKR</a>
-  {% set setup_pages = ('core.timetable', 'core.calendar', 'core.checkpoints',
-                        'core.add_checkpoint', 'core.subjects', 'core.settings') %}
   <div class="nav__links">
     <a class="nav__link {% if request.endpoint == 'core.dashboard' %}is-active{% endif %}"
        href="{{ url_for('core.dashboard') }}">Today</a>
@@ -45,6 +46,7 @@
   </div>
   <span style="flex:1"></span>
   <form method="post" action="{{ url_for('auth.logout') }}" style="margin:0">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn--sm btn--ghost" type="submit">Sign out</button>
   </form>
 </nav>
@@ -54,7 +56,9 @@
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, message in messages %}
-        <div class="banner banner--{{ 'danger' if category == 'error' else 'success' }}"
+        {% set tone = 'danger' if category == 'error'
+                      else ('info' if category == 'info' else 'success') %}
+        <div class="banner banner--{{ tone }}"
              style="margin-bottom:var(--sp-5)" role="status">
           <div class="banner__body"><div class="banner__text">{{ message }}</div></div>
         </div>
@@ -65,6 +69,44 @@
   {% block content %}{% endblock %}
 </main>
 
+{% if current_user.is_authenticated %}
+  {% include "_confirm.html" %}
+
+  {# On a phone the top nav wrapped into three rows and ate a third of the
+     screen before the page began. The four places anyone actually goes belong
+     at the bottom, where a thumb is; Setup opens the rest as a sheet. #}
+  <nav class="tabbar" aria-label="Primary">
+    <a class="tabbar__item {% if request.endpoint == 'core.dashboard' %}is-active{% endif %}"
+       href="{{ url_for('core.dashboard') }}">Today</a>
+    <a class="tabbar__item {% if request.endpoint == 'core.plan' %}is-active{% endif %}"
+       href="{{ url_for('core.plan') }}">Plan</a>
+    <a class="tabbar__item {% if request.endpoint == 'core.upload' %}is-active{% endif %}"
+       href="{{ url_for('core.upload') }}">Upload</a>
+    <button type="button" id="tabbar-setup"
+            class="tabbar__item {% if request.endpoint in setup_pages %}is-active{% endif %}"
+            aria-haspopup="dialog">Setup</button>
+  </nav>
+
+  <dialog class="modal setup-sheet" id="setup-sheet">
+    <div class="modal__title">Setup</div>
+    <a class="nav__menu-item" href="{{ url_for('core.timetable') }}">Timetable</a>
+    <a class="nav__menu-item" href="{{ url_for('core.calendar') }}">Semester calendar</a>
+    <a class="nav__menu-item" href="{{ url_for('core.checkpoints') }}">Checkpoints</a>
+    <a class="nav__menu-item" href="{{ url_for('core.subjects') }}">Subjects</a>
+    <a class="nav__menu-item" href="{{ url_for('core.settings') }}">Settings</a>
+    <div class="row--between" style="margin-top:var(--sp-5)">
+      <form method="post" action="{{ url_for('auth.logout') }}" style="margin:0">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--sm btn--ghost" type="submit">Sign out</button>
+      </form>
+      <button class="btn btn--primary" type="button" id="setup-sheet-close">Done</button>
+    </div>
+  </dialog>
+{% endif %}
+
+{# Both of these drive nav that only exists once you're signed in, so neither
+   ships to the login page. #}
+{% if current_user.is_authenticated %}
 <script>
   /* <details> keeps itself open until its own summary is clicked again, which
      leaves the Setup menu hanging over the page after you navigate past it. */
@@ -78,9 +120,36 @@
       if (event.key === "Escape") menu.removeAttribute("open");
     });
   })();
+
+  /* The phone tab bar's Setup tab, as a sheet. */
+  (function () {
+    var open = document.getElementById("tabbar-setup");
+    var sheet = document.getElementById("setup-sheet");
+    if (!open || !sheet) return;
+    open.addEventListener("click", function () { sheet.showModal(); });
+    document.getElementById("setup-sheet-close")
+      .addEventListener("click", function () { sheet.close(); });
+    sheet.addEventListener("click", function (event) {
+      if (event.target === sheet) sheet.close();   // tapping the backdrop
+    });
+  })();
 </script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/html.js') }}"></script>
+<script src="{{ url_for('static', filename='js/fmt.js') }}"></script>
 <script src="{{ url_for('static', filename='js/api.js') }}"></script>
 <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
+{% if current_user.is_authenticated %}
+  <script>window.BUNKR_VERDICTS = {{ VERDICT_WORDS|tojson }};</script>
+  <script src="{{ url_for('static', filename='js/commit.js') }}"></script>
+  {% if result %}
+    {# What the plan already breaks, so the commit guard can tell a new problem
+       from one that was on screen when the page loaded. #}
+    <script>window.BunkrCommit.observe({{
+      {"is_safe": result.is_safe, "breaks": result.breaks,
+       "overall_breaks": result.overall_breaks}|tojson }});</script>
+  {% endif %}
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

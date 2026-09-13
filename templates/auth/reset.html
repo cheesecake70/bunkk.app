@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Choose a new password · Bunkr{% endblock %}
+
+{% block content %}
+<div class="wrap--narrow" style="margin:0 auto">
+  <div style="text-align:center;margin-bottom:var(--sp-6)">
+    <span class="nav__logo" style="font-size:var(--text-2xl)">BUNKR</span>
+  </div>
+
+  {% if expired %}
+    <div class="card">
+      <h3>That link has expired</h3>
+      <p class="text-muted" style="font-size:var(--text-sm)">
+        Reset links last an hour and work once — and any link stops working as
+        soon as the password changes. Ask for a fresh one.
+      </p>
+      <a class="btn btn--primary" href="{{ url_for('auth.forgot') }}">Send a new link</a>
+    </div>
+  {% else %}
+    <form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h3>Choose a new password</h3>
+      <div class="field">
+        <label for="password">New password</label>
+        <input class="input {% if errors.password %}is-error{% endif %}"
+               id="password" name="password" type="password"
+               autocomplete="new-password" required autofocus>
+        {% if errors.password %}
+          <div class="field__error">{{ errors.password }}</div>
+        {% else %}
+          <div class="field__hint">At least 8 characters.</div>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label for="confirm_password">Confirm password</label>
+        <input class="input {% if errors.confirm_password %}is-error{% endif %}"
+               id="confirm_password" name="confirm_password" type="password"
+               autocomplete="new-password" required>
+        {% if errors.confirm_password %}
+          <div class="field__error">{{ errors.confirm_password }}</div>
+        {% endif %}
+      </div>
+      <button class="btn btn--primary btn--lg" type="submit" style="width:100%;justify-content:center">Save new password</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -26,6 +26,7 @@
 <div class="card" style="margin-bottom:var(--sp-5)">
   <h3 style="margin-bottom:var(--sp-3)">Add a checkpoint</h3>
   <form method="post" action="{{ url_for('core.add_checkpoint') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row" style="align-items:flex-start;gap:var(--sp-3)">
       <div class="field" style="margin:0">
         <label for="on_date">Date</label>
@@ -70,6 +71,7 @@
           {% endif %}
           <form method="post" style="margin:0"
                 action="{{ url_for('core.delete_checkpoint', checkpoint_id=cp.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn--sm btn--danger" type="submit">Remove</button>
           </form>
         </div>

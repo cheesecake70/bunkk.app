@@ -235,7 +235,7 @@ class TestIdentityClaiming:
 
         with app.app_context():
             users = {u.email: u.student_number for u in db.session.query(User).all()}
-            assert users == {"a@example.com": "60004250098", "b@example.com": "60004250099"}
+            assert users == {"a@example.com": "60000000001", "b@example.com": "60004250099"}
             assert db.session.query(LectureInstance).filter_by(user_id=1).count() == 126
             assert db.session.query(LectureInstance).filter_by(user_id=2).count() == 1
 
@@ -377,3 +377,146 @@ class TestIsolationAcrossPhase2And3:
         assert anon.get("/settings").status_code == 302
         assert anon.post("/account/delete", data={}).status_code == 302
         assert anon.post("/account/profile", data={}).status_code == 302
+
+
+class TestSessions:
+    """What the session cookie carries, and what invalidates it.
+
+    SQLite hands a deleted row's id to the next account created. With the id in
+    the cookie, a browser left signed in as a deleted account was signed in as
+    whoever took that id next — reproduced by hand before this was written.
+    """
+
+    def test_the_cookie_carries_a_token_not_the_row_id(self, app):
+        client = app.test_client()
+        register(client, "m@example.com")
+        with app.app_context():
+            user = db.session.query(User).one()
+            assert user.get_id() == user.session_token
+            assert not user.get_id().isdigit()
+
+    def test_a_stale_cookie_cannot_reach_a_reused_id(self, app):
+        first = app.test_client()
+        register(first, "gone@example.com")
+        with app.app_context():
+            original_id = db.session.query(User).one().id
+        first.post("/account/delete", data={"password": "password123"})
+
+        second = app.test_client()
+        register(second, "new@example.com")
+        with app.app_context():
+            reborn = db.session.query(User).one()
+            assert reborn.id == original_id, "expected SQLite to reuse the id"
+
+        # The deleted account's browser: its cookie is for a token nobody holds.
+        stale = app.test_client()
+        stale.set_cookie("session", first.get_cookie("session").value)
+        assert stale.get("/").status_code == 302
+
+    def test_changing_the_password_keeps_you_in_and_signs_the_others_out(self, app):
+        here = app.test_client()
+        register(here, "m@example.com")
+
+        elsewhere = app.test_client()
+        elsewhere.post("/login", data={"email": "m@example.com",
+                                       "password": "password123"})
+        assert elsewhere.get("/").status_code == 200
+
+        resp = here.post("/account/password", data={
+            "current_password": "password123",
+            "new_password": "brand-new-pass",
+            "confirm_password": "brand-new-pass",
+        })
+        assert resp.status_code == 302
+        assert here.get("/").status_code == 200          # this browser stays
+        assert elsewhere.get("/").status_code == 302     # that one doesn't
+
+        here.post("/logout")
+        assert here.post("/login", data={"email": "m@example.com",
+                                         "password": "brand-new-pass"}).status_code == 302
+
+    def test_a_wrong_current_password_changes_nothing(self, app):
+        client = app.test_client()
+        register(client, "m@example.com")
+        with app.app_context():
+            before = db.session.query(User).one().password_hash
+
+        client.post("/account/password", data={
+            "current_password": "not-it",
+            "new_password": "brand-new-pass",
+            "confirm_password": "brand-new-pass",
+        })
+        with app.app_context():
+            assert db.session.query(User).one().password_hash == before
+
+    def test_a_short_or_mismatched_new_password_is_refused(self, app):
+        client = app.test_client()
+        register(client, "m@example.com")
+        with app.app_context():
+            before = db.session.query(User).one().password_hash
+
+        for new, confirm in (("short", "short"), ("longenough1", "longenough2")):
+            client.post("/account/password", data={
+                "current_password": "password123",
+                "new_password": new, "confirm_password": confirm,
+            })
+        with app.app_context():
+            assert db.session.query(User).one().password_hash == before
+
+
+class TestClaimedIdentityPointsHome:
+    """"Another account has this student number" is a dead end on its own.
+
+    The person reading it is nearly always its owner, signed into the wrong one
+    of their two accounts, so the refusal names the account and offers the way
+    across — with the email masked, because a report that has fallen into
+    someone else's hands must not also hand over a contact address.
+    """
+
+    def _claim_then_collide(self, app):
+        owner = app.test_client()
+        register(owner, "owner@example.com", username="owner")
+        assert upload(owner).status_code == 200
+
+        other = app.test_client()
+        register(other, "second@example.com", username="second")
+        return other, upload(other)
+
+    def test_the_refusal_names_the_account_holding_it(self, app):
+        _, resp = self._claim_then_collide(app)
+        assert resp.status_code == 422
+        claimed = resp.get_json()["claimed_by"]
+        assert claimed["username"] == "owner"
+        assert claimed["student_number"] == "60000000001"
+
+    def test_the_email_is_masked_but_still_recognisable(self, app):
+        """Enough to tell your Gmail account from your Outlook one, and no more."""
+        _, resp = self._claim_then_collide(app)
+        hint = resp.get_json()["claimed_by"]["email_hint"]
+        assert hint.endswith("@example.com")
+        assert hint.startswith("o")
+        assert "owner@" not in hint
+        assert "\u2022" in hint
+
+    def test_signing_out_can_land_on_that_account_s_login(self, app):
+        other, _ = self._claim_then_collide(app)
+        resp = other.post("/logout", data={"next": "/login?as=owner"})
+        assert resp.headers["Location"] == "/login?as=owner"
+
+        page = other.get("/login?as=owner").get_data(as_text=True)
+        assert 'value="owner"' in page
+
+    def test_sign_out_still_refuses_to_leave_the_site(self, app):
+        client = app.test_client()
+        register(client, "m@example.com")
+        resp = client.post("/logout", data={"next": "https://evil.example.com/x"})
+        assert resp.headers["Location"] == "/login"
+
+    def test_an_ordinary_failure_names_nobody(self, app):
+        """Only this one refusal carries an account; a bad PDF must not."""
+        client = app.test_client()
+        register(client, "m@example.com")
+        summary = Path(__file__).parent / "golden" / "summary_july.pdf"
+        resp = upload(client, summary)
+        assert resp.status_code == 422
+        assert "claimed_by" not in resp.get_json()

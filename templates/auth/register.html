@@ -11,6 +11,7 @@
   </div>
 
   <form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h3>Create your account</h3>
 
     <div class="field">

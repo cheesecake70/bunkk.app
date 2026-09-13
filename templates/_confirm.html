@@ -1,0 +1,11 @@
+{# The one question Bunkr asks before writing something down: "this breaks a
+   limit — still want it?". Native <dialog>, so Escape and the backdrop close it,
+   and both of those count as "no" (see commit.js). #}
+<dialog class="modal" id="confirm-sheet">
+  <div class="modal__title" id="confirm-title">Are you sure?</div>
+  <p id="confirm-body" style="margin:0 0 var(--sp-5)"></p>
+  <div class="row--between">
+    <button class="btn btn--ghost" type="button" id="confirm-no">Cancel</button>
+    <button class="btn btn--danger" type="button" id="confirm-yes">Plan it anyway</button>
+  </div>
+</dialog>

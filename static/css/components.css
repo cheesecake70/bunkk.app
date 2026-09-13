@@ -66,7 +66,6 @@ a:hover { background: var(--acc-yellow); }
 .btn--sm   { padding: var(--sp-2) var(--sp-4); font-size: var(--text-xs); box-shadow: var(--shadow-sm); }
 .btn--sm:hover { box-shadow: var(--shadow-md); }
 .btn--lg   { padding: var(--sp-4) var(--sp-6); font-size: var(--text-base); }
-.btn--pill { border-radius: var(--radius-pill); }
 .btn.is-loading { pointer-events: none; opacity: 0.7; }
 
 /* ---- Cards ---------------------------------------------------------------- */
@@ -76,13 +75,9 @@ a:hover { background: var(--acc-yellow); }
   box-shadow: var(--shadow-md);
   padding: var(--sp-5);
 }
-.card--flat { box-shadow: none; }
-.card--lift { box-shadow: var(--shadow-lg); }
 .card--yellow { background: var(--soft-yellow); }
 .card--purple { background: var(--soft-purple); }
 .card--cyan   { background: var(--soft-cyan); }
-.card--pink   { background: var(--soft-pink); }
-.card--ink    { background: var(--ink); color: var(--ink-inverse); }
 .card--clickable { cursor: pointer; transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
 .card--clickable:hover { transform: translate(-2px,-2px); box-shadow: var(--shadow-lg); }
 
@@ -110,37 +105,9 @@ a:hover { background: var(--acc-yellow); }
 .badge--type-tutorial  { background: var(--soft-orange); }
 .badge--type-unknown   { background: var(--paper); }
 
-/* ---- Verdict chips (GO/SKIP day strip) ------------------------------------ */
-.day-strip { display: flex; gap: var(--sp-3); overflow-x: auto; padding: var(--sp-2) var(--sp-1) var(--sp-4); }
-.verdict {
-  min-width: 92px; flex: 0 0 auto;
-  border: var(--border-heavy); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  padding: var(--sp-3); text-align: center; background: var(--card);
-  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-}
-.verdict:hover { transform: translate(-2px,-2px); box-shadow: var(--shadow-md); }
-.verdict__dow  { font-family: var(--font-label); font-size: var(--text-xs); text-transform: uppercase; }
-.verdict__date { font-family: var(--font-display); font-size: var(--text-2xl); line-height: 1; margin: 2px 0; }
-.verdict__tag  {
-  display: block; margin-top: var(--sp-2);
-  font-family: var(--font-mono); font-weight: 700; font-size: var(--text-xs);
-  text-transform: uppercase; letter-spacing: var(--tracking-caps);
-  border: var(--border); border-radius: var(--radius-sm); padding: 2px 4px;
-  background: var(--card);
-}
-.verdict--skip   { background: var(--safe-fill); }
-.verdict--skip   .verdict__tag { background: var(--card); }
-.verdict--partial { background: var(--warn-fill); }
-.verdict--go     { background: var(--danger-fill); }
-.verdict--off    { background: var(--paper); color: var(--ink-muted); box-shadow: none; border-style: dashed; }
-.verdict--today  { box-shadow: var(--shadow-lg); position: relative; }
-.verdict--today::after {
-  content: "TODAY"; position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-  font-family: var(--font-label); font-size: 9px; font-weight: 700;
-  background: var(--ink); color: var(--ink-inverse);
-  padding: 1px 8px; border-radius: var(--radius-pill);
-}
+/* The GO/SKIP day strip lived here until the horizon outgrew a single row of
+   chips; the plan page draws the same verdicts as month grids now, and its
+   colours live with that grid in app.css. */
 
 /* ---- Stat tiles ------------------------------------------------------------ */
 .stat {
@@ -157,7 +124,6 @@ a:hover { background: var(--acc-yellow); }
 .stat--safe   { background: var(--safe-soft); }
 .stat--warn   { background: var(--warn-soft); }
 .stat--danger { background: var(--danger-soft); }
-.stat--hero .stat__value { font-size: var(--text-hero); }
 
 /* ---- Attendance meter ------------------------------------------------------ */
 .meter { position: relative; height: 22px;
@@ -239,19 +205,6 @@ table.subjects { width: 100%; border-collapse: collapse; }
   transition: background var(--dur-fast); }
 .check input:checked { background: var(--acc-green); }
 .check input:checked::before { content: "✕"; font-weight: 900; font-size: 13px; }
-
-/* Toggle */
-.toggle { position: relative; display: inline-block; width: 56px; height: 30px; }
-.toggle input { opacity: 0; width: 0; height: 0; }
-.toggle__track { position: absolute; inset: 0; background: var(--card);
-  border: var(--border); border-radius: var(--radius-pill); cursor: pointer;
-  transition: background var(--dur) var(--ease); }
-.toggle__track::before { content: ""; position: absolute; top: 2px; left: 3px;
-  width: 20px; height: 20px; background: var(--ink); border-radius: 50%;
-  transition: transform var(--dur) var(--ease); }
-.toggle input:checked + .toggle__track { background: var(--acc-green); }
-.toggle input:checked + .toggle__track::before { transform: translateX(25px); }
-.toggle input:focus-visible + .toggle__track { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
 /* Upload dropzone */
 .dropzone {
@@ -339,7 +292,6 @@ table.subjects { width: 100%; border-collapse: collapse; }
 /* ---- Utilities ----------------------------------------------------------------- */
 .text-muted { color: var(--ink-muted); }
 .text-safe   { color: var(--safe-deep);   font-weight: 700; }
-.text-warn   { color: var(--warn-deep);   font-weight: 700; }
 .text-danger { color: var(--danger-deep); font-weight: 700; }
 .text-pending{ color: var(--pending-deep);font-weight: 700; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;

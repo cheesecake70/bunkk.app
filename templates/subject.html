@@ -9,34 +9,37 @@
 </div>
 
 {% if stats %}
-<div class="grid-stats" style="margin-bottom:var(--sp-5)">
-  <div class="stat stat--{{ stats.verdict.value }}">
+{# data-stat hooks: a guess repaints these in place rather than reloading the
+   page out from under whatever you were reading (js/subject.js). #}
+<div class="grid-stats" style="margin-bottom:var(--sp-5)"
+     data-subject-page="{{ subject.id }}">
+  <div class="stat stat--{{ stats.verdict.value }}" data-tone="worst">
     <div class="stat__label">Worst case</div>
-    <div class="stat__value num">{{ stats.worst_pct|percent(0) }}</div>
+    <div class="stat__value num" data-stat="worst_pct">{{ stats.worst_pct|percent(0) }}</div>
     <div class="stat__meta">pending counted absent</div>
   </div>
   <div class="stat">
     <div class="stat__label">Official</div>
-    <div class="stat__value num">{{ stats.official_pct|percent(0) }}</div>
+    <div class="stat__value num" data-stat="official_pct">{{ stats.official_pct|percent(0) }}</div>
     <div class="stat__meta">what the portal shows</div>
   </div>
   <div class="stat">
     <div class="stat__label">Best case</div>
-    <div class="stat__value num">{{ stats.best_pct|percent(0) }}</div>
+    <div class="stat__value num" data-stat="best_pct">{{ stats.best_pct|percent(0) }}</div>
     <div class="stat__meta">if every pending resolves present</div>
   </div>
   <div class="stat stat--{{ 'danger' if stats.verdict.value == 'danger' else ('warn' if stats.can_miss_effective == 0 else 'safe') }}">
     {% if stats.pending_dominated %}
       <div class="stat__label">Unmarked</div>
-      <div class="stat__value num">{{ stats.counts.unknown }}</div>
+      <div class="stat__value num" data-stat="pending">{{ stats.counts.unknown }}</div>
       <div class="stat__meta">resolve these before judging this subject</div>
     {% elif stats.verdict.value == 'danger' %}
       <div class="stat__label">Attend next</div>
-      <div class="stat__value num">{{ stats.recover_needed }}</div>
+      <div class="stat__value num" data-stat="recover_needed">{{ stats.recover_needed }}</div>
       <div class="stat__meta">in a row to clear {{ stats.limit }}%</div>
     {% else %}
       <div class="stat__label">Can miss</div>
-      <div class="stat__value num">{{ stats.can_miss_effective }}</div>
+      <div class="stat__value num" data-stat="can_miss">{{ stats.can_miss_effective }}</div>
       <div class="stat__meta">
         {% if stats.can_miss_effective < stats.can_miss %}
           capped by the overall {{ overall.limit }}% rule
@@ -50,11 +53,15 @@
 
 <div class="card" style="margin-bottom:var(--sp-6)">
   <div class="row--between" style="margin-bottom:var(--sp-3)">
-    <b class="mono">{{ stats.counts.present }} present · {{ stats.counts.absent }} absent · {{ stats.counts.unknown }} pending</b>
+    <b class="mono">
+      <span data-stat="present">{{ stats.counts.present }}</span> present ·
+      <span data-stat="absent">{{ stats.counts.absent }}</span> absent ·
+      <span data-stat="pending">{{ stats.counts.unknown }}</span> pending
+    </b>
     <span class="mono text-muted">{{ stats.counts.total }} lectures held</span>
   </div>
   <div class="meter {% if stats.verdict.value == 'warn' %}meter--warn{% elif stats.verdict.value == 'danger' %}meter--danger{% endif %}">
-    <div class="meter__fill" style="width:{{ stats.worst_pct|percent_width }}%"></div>
+    <div class="meter__fill" data-meter style="width:{{ stats.worst_pct|percent_width }}%"></div>
     <div class="meter__limit" style="left:{{ stats.limit }}%" data-label="{{ stats.limit }}%"></div>
   </div>
 </div>
@@ -86,6 +93,17 @@
       you missed it — but a guess of <strong>Present</strong> will, so only use
       it where you actually turned up. A fresh report always overrules a guess.
     </div>
+    {# One tap for the answer that is nearly always the same one. Going through
+       forty lectures individually is the reason most people never did it. #}
+    <div class="row" style="gap:var(--sp-2);margin-top:var(--sp-3)">
+      <span class="eyebrow">Mark all pending:</span>
+      <button type="button" class="btn btn--sm js-guess-all"
+              data-subject="{{ subject.id }}" data-value="P">I attended these</button>
+      <button type="button" class="btn btn--sm js-guess-all"
+              data-subject="{{ subject.id }}" data-value="A">I missed these</button>
+      <button type="button" class="btn btn--sm btn--ghost js-guess-all"
+              data-subject="{{ subject.id }}" data-value="">Clear</button>
+    </div>
   </div>
 </div>
 {% endif %}
@@ -106,7 +124,8 @@
         <span class="badge badge--neutral">Vanished</span>
       {% elif lecture.status in unknown_statuses %}
         {# Unmarked: let the student say what it will probably be. #}
-        <span class="guess" role="group" aria-label="What will this be?">
+        <span class="guess" role="group" aria-label="What will this be?"
+              data-subject="{{ subject.id }}">
           {% for value, label in (('P', 'Present'), ('A', 'Absent')) %}
             <button type="button" class="guess__btn js-guess"
                     data-lecture="{{ lecture.id }}" data-value="{{ value }}"

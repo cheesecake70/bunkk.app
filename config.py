@@ -1,12 +1,23 @@
-"""Configuration objects. Select with BUNKR_CONFIG env var."""
+"""Configuration objects. Select with BUNKR_CONFIG env var.
+
+A `.env` file beside this module is loaded first, so a deployment only ever
+has to fill in `.env.example`. Real environment variables win over the file.
+"""
 import os
 
+from dotenv import load_dotenv
+
 BASEDIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(os.path.join(BASEDIR, ".env"))
 
 
 #: Anyone who knows this can forge another user's session, so production
 #: refuses to start with it.
 DEV_SECRET_KEY = "dev-only-change-me"
+
+
+def _bool(name: str, default: str) -> bool:
+    return os.environ.get(name, default) not in ("0", "false", "False", "")
 
 
 class BaseConfig:
@@ -16,6 +27,31 @@ class BaseConfig:
         "BUNKR_UPLOAD_DIR", os.path.join(BASEDIR, "instance", "uploads")
     )
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5 MB — reports are ~25-400 KB
+
+    # CSRF tokens are bound to the session, not the clock: a page left open
+    # over lunch must still be able to submit.
+    WTF_CSRF_TIME_LIMIT = None
+
+    # Per-IP throttles on the three routes that take a guess at a credential.
+    # memory:// is per process; point this at Redis when running several
+    # gunicorn workers, otherwise every worker gets its own allowance.
+    RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
+    RATELIMIT_HEADERS_ENABLED = True
+
+    # Password-reset mail. Without MAIL_SERVER the link is logged instead of
+    # sent, which is all a single-machine dev setup needs.
+    MAIL_SERVER = os.environ.get("MAIL_SERVER")
+    MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
+    MAIL_USE_TLS = _bool("MAIL_USE_TLS", "1")
+    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER",
+                                         "Bunkr <no-reply@localhost>")
+
+    #: Environment variables `create_app` insists on. Empty outside production.
+    REQUIRED_ENV: tuple[str, ...] = ()
+    #: Trust X-Forwarded-* from one hop (nginx / Caddy in front of gunicorn).
+    BEHIND_PROXY = False
 
 
 class DevConfig(BaseConfig):
@@ -28,16 +64,36 @@ class DevConfig(BaseConfig):
 class TestConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"  # in-memory
+    MAIL_SERVER = None                     # mail goes to the outbox, not a socket
+    # Both are exercised by dedicated tests that switch them back on; every
+    # other test would otherwise have to carry a token and share a counter.
+    WTF_CSRF_ENABLED = False
+    RATELIMIT_ENABLED = False
 
 
 class ProdConfig(BaseConfig):
     DEBUG = False
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", "sqlite:///" + os.path.join(BASEDIR, "instance", "bunkr.db")
-    )
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "")
     # Self-hosted deployment: gunicorn behind nginx/Caddy with HTTPS.
+    BEHIND_PROXY = _bool("BUNKR_BEHIND_PROXY", "1")
+    PREFERRED_URL_SCHEME = "https"
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
+    # Flask-Login's remember-me cookie has its own switches and its own
+    # defaults (not Secure, no SameSite), so it needs saying separately.
+    REMEMBER_COOKIE_SECURE = True
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SAMESITE = "Lax"
+    # Hosts this app will answer for. Anything else is refused before a
+    # password-reset link can be built from a forged Host header.
+    TRUSTED_HOSTS = [
+        h.strip() for h in os.environ.get("BUNKR_TRUSTED_HOSTS", "").split(",")
+        if h.strip()
+    ] or None
+    REQUIRED_ENV = (
+        "SECRET_KEY", "DATABASE_URL", "MAIL_SERVER", "MAIL_DEFAULT_SENDER",
+        "BUNKR_TRUSTED_HOSTS",
+    )
     # The boot-time guard lives in create_app: Flask's from_object reads class
     # attributes without instantiating, so a check in __init__ would never run.

@@ -11,13 +11,17 @@
 (function () {
   "use strict";
 
+  var esc = window.BunkrHtml.esc;
+
   function note(rung, under, data) {
     if (under) {
       return data.subject.already_broken
         ? "still under " + data.subject.limit + "%"
         : "drops below " + data.subject.limit + "%";
     }
-    if (rung.breaks.length) return rung.breaks.join(", ") + " breaks";
+    /* Subject codes are whatever the student renamed them to, and this is an
+       innerHTML string. */
+    if (rung.breaks.length) return esc(rung.breaks.join(", ")) + " breaks";
     if (!rung.is_safe) return "breaks the overall limit";
     return "still safe";
   }
@@ -43,19 +47,26 @@
       : "before the end of term";
 
     var broken = data.subject.already_broken;
-    var subject = opts.lead === "short" ? "" : data.subject.code + " ";
+    var subject = opts.lead === "short" ? "" : esc(data.subject.code) + " ";
 
     var html = '<p class="text-muted" style="font-size:var(--text-sm)">' +
-      "Skipping this many more " + subject + "lectures " + horizon +
+      "Skipping this many more " + subject + "lectures " + esc(horizon) +
       ":</p><div class=\"ladder\">";
 
     data.ladder.forEach(function (rung) {
       var under = rung.subject_pct !== null && rung.subject_pct < data.subject.limit;
       var tone = under ? "danger" : (rung.is_safe ? rung.subject_verdict : "danger");
+      /* Which lecture the rung actually reaches. "3" is an abstraction; "through
+         Mon 7 Sep" is the thing you can hold against a calendar. */
+      var through = rung.through_date
+        ? '<div class="ladder__through mono">through ' +
+          esc(window.BunkrFmt.date(rung.through_date)) + "</div>"
+        : "";
       html += '<div class="ladder__rung ladder__rung--' + tone + '">' +
         '<div class="ladder__n num">' + rung.n + '</div>' +
         '<div class="ladder__pct mono">' + rung.subject_pct.toFixed(1) + "%</div>" +
-        '<div class="ladder__note">' + note(rung, under, data) + "</div></div>";
+        '<div class="ladder__note">' + note(rung, under, data) + "</div>" +
+        through + "</div>";
     });
 
     html += "</div>";
@@ -64,7 +75,7 @@
       /* Every rung "breaks nothing new" when the subject is already under its
          line, so saying "still safe" here would be plainly false. */
       html += '<p class="text-danger" style="font-size:var(--text-sm)">' +
-        data.subject.code + " is already below its " + data.subject.limit +
+        esc(data.subject.code) + " is already below its " + data.subject.limit +
         "% line at " + data.subject.current_pct.toFixed(1) +
         "%. Skipping more digs the hole deeper — none of these are safe.</p>";
     } else {

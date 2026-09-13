@@ -3,8 +3,8 @@
 Attendance calculator & manager for university students. Upload your college
 attendance PDF → know exactly what you can skip.
 
-Full docs live in the Claude project: `prd.md`, `implementation-plan.md`,
-`design.md`.
+The design system lives in `docs/design.md`; the pre-launch hardening list in
+`docs/LAUNCH_CHECKLIST.md`.
 
 ## Status: multi-user — invite your friends onto your own server
 
@@ -43,10 +43,31 @@ portal's own summary report for all 14 subjects.
   planned absences spend first, and lectures held since the last upload counted
   as unknowns (they can't be attended any more, so ignoring them would
   overstate the budget).
-- The **GO/SKIP hero**: today's verdict in one word, a two-week day strip, and
-  leave-early / arrive-late options on partial days.
+- The **GO/SKIP hero**: today's verdict in one word, and leave-early /
+  arrive-late options on partial days.
 - Plan-ahead simulator: commit future absences (whole day or one subject) and
   watch every budget recompute; over-commitment names what breaks.
+
+**Phase 3** — the walkthrough pass: everything a student hit using it for real.
+
+- A fifth day verdict, **PLANNED**. A day you have already written off is not
+  advice, and calling it SKIP told people their own over-spend was safe. It
+  carries `over_budget`, so a commitment that broke a limit says so instead of
+  staying green — and the day sheet, the month grid and Today's hero all repaint
+  from the same payload rather than reloading.
+- **Committing warns before and after**: a new absence that would newly break a
+  limit asks first, and says what it cost afterwards, with Undo.
+- **Bulk guesses.** Fifty unmarked lectures answered in one tap, per subject or
+  across the board, with the figures patched in place. One at a time, each with
+  a page reload, is not something anyone finished.
+- The horizon is drawn as **month grids** rather than one long row of chips, and
+  weekends get no column unless the timetable uses them.
+- **Phones get a bottom tab bar** (the top nav wrapped into three rows), and the
+  timetable shows one day at a time.
+- **Change and reset your password**; sessions carry a random token rather than
+  the row id, so a stale cookie can't reach an account that reused it.
+- Holidays can be marked a **range** at a time; a whole-day absence on a day with
+  no classes is refused rather than silently stored.
 
 **Multi-user** — the schema was multi-tenant from Phase 0, so this is about
 everything that only becomes a question with a second person:
@@ -65,12 +86,18 @@ everything that only becomes a question with a second person:
 - **Leaving is easy**: a password-confirmed deletion that removes every row and
   the raw PDFs.
 - Production refuses to boot with the development `SECRET_KEY` — forgeable
-  sessions stop being a dev nicety once other people have accounts.
+  sessions stop being a dev nicety once other people have accounts — or
+  without a mail server, a database URL and the hostnames it answers for.
+- **Hardened for a public domain**: CSRF tokens on every form and fetch, per-IP
+  rate limits on login / registration / forgot-password, `Secure` and
+  `SameSite` on both cookies, trusted-host checking so a forged `Host` header
+  can't shape a reset link, security headers on every response, and JSON
+  errors from `/api` (a corrupt PDF is a 422, never a 500).
 
 Worst case drives every number on screen: a pending lecture counts as absent
-until the college says otherwise, so a green verdict is always safe. The
-day-strip property test asserts exactly that: a SKIP verdict can never break
-a limit.
+until the college says otherwise, so a green verdict is always safe. The day
+verdict's property test asserts exactly that — a SKIP can never break a limit,
+and never describes a day with nothing left to decide.
 
 ## Dev setup
 
@@ -90,14 +117,20 @@ Register at `/register`, then drop a detailed-report PDF on `/upload`.
 app/                 Flask app (factory, models, auth, pages, JSON API, merge)
   merge.py           snapshot -> LectureLedger fold, diffs, gap flags
   services.py        the only place DB rows become engine inputs (user-scoped)
-  planning.py        advanced mode: timetable, calendar, wallet, day strip
-  account.py         profile, data export, account deletion
+  planning.py        advanced mode: timetable, calendar, wallet, day verdicts
+  account.py         profile, password, account deletion
+  mail.py            the one outgoing email: a password-reset link
+  cache.py           per-request memoisation, dropped on write
 report_parser/       pure PDF -> typed data (no Flask/DB imports)
 attendance_engine/   pure math: budgets, percentages, coverage
 templates/           Jinja pages
 static/css/          tokens.css + components.css (design system) + app.css
-static/js/           upload.js, calendar.js, plan.js
-tools/make_icons.py  regenerates the icon set from the design tokens
+static/js/           html.js fmt.js api.js toast.js commit.js (shared),
+                     then one file per page: today, plan, daysheet, calendar,
+                     timetable, subject(s), predictions, ladder, upload
+tools/make_icons.py  regenerates the favicon and touch icon from the design tokens
+docs/                design system, launch checklist
+gunicorn.conf.py     production server settings
 tests/golden/        real portal PDFs used as parser ground truth
 migrations/          Alembic (SQLite now, Postgres later via ADR-2)
 ```
@@ -105,11 +138,24 @@ migrations/          Alembic (SQLite now, Postgres later via ADR-2)
 ## Deploying for more than yourself
 
 ```bash
-export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
-export BUNKR_CONFIG=config.ProdConfig
+cp .env.example .env            # then fill every value in
+python -c "import secrets; print(secrets.token_hex(32))"   # -> SECRET_KEY
 flask db upgrade
-gunicorn "run:app"
+gunicorn -c gunicorn.conf.py run:app
 ```
+
+`.env` is loaded automatically. With `BUNKR_CONFIG=config.ProdConfig` the app
+refuses to start unless `SECRET_KEY`, `DATABASE_URL`, `MAIL_SERVER`,
+`MAIL_DEFAULT_SENDER` and `BUNKR_TRUSTED_HOSTS` are all set — each of those
+fails quietly otherwise. Put nginx or Caddy in front with HTTPS and pass
+`X-Forwarded-For` / `-Proto` / `-Host`; the app trusts exactly one proxy hop.
+With more than one gunicorn worker, point `RATELIMIT_STORAGE_URI` at Redis so
+the login throttle is shared rather than per worker.
+
+**Upgrading past `c7f1a4b82e50` signs everyone out once.** Sessions used to
+carry the user's row id, and SQLite hands a deleted row's id to the next account
+created — so a leftover cookie could reach a stranger's ledger. They carry a
+random token now; the old cookies match nothing and resolve to a login page.
 
 Back up `instance/bunkr.db` *and* `instance/uploads/` together —
 the ledger is replayable from the snapshots only if the PDFs survive with it.
@@ -121,7 +167,7 @@ WAL mode the database is three files: never move or copy `bunkr.db` without
 `bunkr.db-wal` beside it, or you silently lose everything not yet
 checkpointed.
 
-## Next (Phase 4 — the rest of opening up)
+## Next (the rest of opening up)
 
 More college adapters (the `College` entity and parser interface are the
 insurance), then evaluate paid features once retention is proven. Move to

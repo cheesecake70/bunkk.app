@@ -64,6 +64,16 @@
           {% endif %}
           Oldest is from <span class="range">{{ coverage.oldest_pending|short_date }}</span>.
         </div>
+        {# The honest default for most students is "I went to nearly all of
+           them", and saying so subject by subject is fifty taps. #}
+        <div class="row" style="gap:var(--sp-2);margin-top:var(--sp-3)">
+          <span class="eyebrow">All of them:</span>
+          <button type="button" class="btn btn--sm js-guess-all" data-value="P">I attended these</button>
+          <button type="button" class="btn btn--sm js-guess-all" data-value="A">I missed these</button>
+          {% if guess_count %}
+            <button type="button" class="btn btn--sm btn--ghost js-guess-all" data-value="">Clear guesses</button>
+          {% endif %}
+        </div>
       </div>
     </div>
   {% endif %}

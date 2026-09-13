@@ -9,6 +9,7 @@
   </div>
 
   <form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h3>Sign in</h3>
     <div class="field">
       <label for="email">Email or username</label>
@@ -20,6 +21,9 @@
       <input class="input {% if errors.password %}is-error{% endif %}"
              id="password" name="password" type="password" required>
       {% if errors.password %}<div class="field__error">{{ errors.password }}</div>{% endif %}
+      <div class="field__hint">
+        <a href="{{ url_for('auth.forgot') }}">Forgot your password?</a>
+      </div>
     </div>
     <button class="btn btn--primary btn--lg" type="submit" style="width:100%;justify-content:center">Sign in</button>
   </form>

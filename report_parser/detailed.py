@@ -23,6 +23,10 @@ from .types import (
     ValidationError,
 )
 
+#: A semester's detailed report runs to a dozen pages; anything past this is
+#: not a report, whatever its extension says.
+MAX_PAGES = 100
+
 _DURATION_RE = re.compile(
     r"From\s+(\d{2})\.(\d{2})\.(\d{4})\s+to\s+(\d{2})\.(\d{2})\.(\d{4})"
 )
@@ -51,10 +55,25 @@ def _extract_lines(source) -> list[str]:
     if isinstance(source, (bytes, bytearray)):
         source = io.BytesIO(source)
     lines: list[str] = []
-    with pdfplumber.open(source) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            lines.extend(ln.strip() for ln in text.splitlines() if ln.strip())
+    try:
+        with pdfplumber.open(source) as pdf:
+            if len(pdf.pages) > MAX_PAGES:
+                raise UnrecognisedReportError(
+                    "That PDF has far more pages than an attendance report."
+                )
+            for page in pdf.pages:
+                text = page.extract_text() or ""
+                lines.extend(ln.strip() for ln in text.splitlines() if ln.strip())
+    except UnrecognisedReportError:
+        raise
+    except Exception as exc:
+        # pdfminer raises a different class for every way a file can be
+        # broken (truncated, encrypted, not a PDF at all). None of them is
+        # worth a 500 — the file is the problem, and the upload page says so.
+        raise UnrecognisedReportError(
+            "Couldn't read that file as a PDF. Export the detailed report from "
+            "the portal again and upload the fresh file."
+        ) from exc
     return lines
 
 
