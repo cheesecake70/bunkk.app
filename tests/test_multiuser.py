@@ -392,7 +392,7 @@ class TestSessions:
         # The deleted account's browser: its cookie is for a token nobody holds.
         stale = app.test_client()
         stale.set_cookie("session", first.get_cookie("session").value)
-        assert stale.get("/").status_code == 302
+        assert stale.get("/settings").status_code == 302
 
     def test_signing_out_other_devices_keeps_this_one(self, app):
         here = app.test_client()
@@ -405,7 +405,7 @@ class TestSessions:
         resp = here.post("/account/sessions/revoke")
         assert resp.status_code == 302
         assert here.get("/").status_code == 200          # this browser stays
-        assert elsewhere.get("/").status_code == 302     # that one doesn't
+        assert elsewhere.get("/settings").status_code == 302     # that one doesn't
 
 
 class TestClaimedIdentityPointsHome:

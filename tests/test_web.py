@@ -73,7 +73,7 @@ class TestAuth:
     def test_an_unverified_google_address_is_refused(self, client):
         resp = google_sign_in(client, "m@example.com", verified=False)
         assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
-        assert client.get("/").status_code == 302
+        assert client.get("/settings").status_code == 302
 
     def test_signing_in_again_lands_on_the_dashboard(self, client):
         register(client)
