@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Usage · Bunkk{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="eyebrow">Admin only</div>
+  <h1>Usage</h1>
+  <p class="page-head__sub">
+    Who signed up, who came back and what they used. Days are UTC.
+  </p>
+</div>
+
+<div class="grid-stats" style="margin-bottom:var(--sp-5)">
+  <div class="stat">
+    <div class="stat__label">Accounts</div>
+    <div class="stat__value num">{{ stats.users.total }}</div>
+    <div class="stat__meta">{{ stats.users.with_report }} uploaded a report</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">Active, 7 days</div>
+    <div class="stat__value num">{{ stats.users.active['7d'] }}</div>
+    <div class="stat__meta">{{ stats.users.active['1d'] }} today · {{ stats.users.active['30d'] }} in 30d</div>
+  </div>
+  <div class="stat">
+    <div class="stat__label">New, 7 days</div>
+    <div class="stat__value num">{{ stats.users.signups['7d'] }}</div>
+    <div class="stat__meta">{{ stats.users.signups['1d'] }} today · {{ stats.users.signups['30d'] }} in 30d</div>
+  </div>
+</div>
+
+<div class="stack--lg">
+  <div class="card">
+    <h3 style="margin-bottom:var(--sp-3)">Last {{ stats.daily|length }} days</h3>
+    <div class="table-wrap">
+      <table class="subjects subjects--plain">
+        <thead>
+          <tr><th>Day</th><th>Active accounts</th><th>Sign-ups</th><th>Sign-ins</th><th>Uploads</th></tr>
+        </thead>
+        <tbody>
+          {% for day in stats.daily %}
+            <tr>
+              <td class="mono">{{ day.date }}</td>
+              <td class="mono">{{ day.active }}</td>
+              <td class="mono">{{ day.signups }}</td>
+              <td class="mono">{{ day.logins }}</td>
+              <td class="mono">{{ day.uploads }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:var(--sp-3)">What gets used</h3>
+    {% if not stats.events %}
+      <p class="text-muted" style="font-size:var(--text-sm)">Nothing recorded yet.</p>
+    {% else %}
+    <div class="table-wrap">
+      <table class="subjects subjects--plain">
+        <thead>
+          <tr><th>Event</th><th>7 days</th><th>30 days</th><th>Accounts, 30 days</th><th>All time</th></tr>
+        </thead>
+        <tbody>
+          {% for event in stats.events %}
+            <tr>
+              <td class="mono">{{ event.name }}</td>
+              <td class="mono">{{ event.last_7d }}</td>
+              <td class="mono">{{ event.last_30d }}</td>
+              <td class="mono">{{ event.users_30d }}</td>
+              <td class="mono">{{ event.all_time }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:var(--sp-3)">Accounts, most recent first</h3>
+    <div class="table-wrap">
+      <table class="subjects subjects--plain">
+        <thead>
+          <tr><th>Username</th><th>Email</th><th>Joined</th><th>Last sign-in</th><th>Last seen</th><th>Report</th></tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>@{{ user.username }}</td>
+              <td>{{ user.email }}</td>
+              <td class="mono">{{ user.created_at.strftime('%d %b %Y') if user.created_at else '—' }}</td>
+              <td class="mono">{{ user.last_login_at.strftime('%d %b %H:%M') if user.last_login_at else '—' }}</td>
+              <td class="mono">{{ user.last_seen_at.strftime('%d %b %H:%M') if user.last_seen_at else '—' }}</td>
+              <td>{{ 'Yes' if user.student_number else 'No' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

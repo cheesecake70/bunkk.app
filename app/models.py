@@ -49,6 +49,13 @@ class User(UserMixin, db.Model):
     #: When Google vouched for the address. Every account signed in through
     #: Google has this set; it is kept so nothing that reads it has to change.
     email_verified_at = db.Column(db.DateTime)
+    #: The last time this person came through the Google callback. Rare by
+    #: design — the remember-me cookie keeps them in for months — so on its own
+    #: it badly undercounts who is using the app.
+    last_login_at = db.Column(db.DateTime)
+    #: The last time a signed-in request arrived, to the nearest hour or so
+    #: (tracking.SEEN_EVERY). This is the one that answers "who is active".
+    last_seen_at = db.Column(db.DateTime)
     #: What the session cookie actually holds. SQLite hands a deleted row's id
     #: to the next account created, so a remember-me cookie carrying the id
     #: alone would sign its holder into a stranger's account. A random token
@@ -77,6 +84,22 @@ class User(UserMixin, db.Model):
 
     def rotate_session(self) -> None:
         self.session_token = new_session_token()
+
+
+class Event(db.Model):
+    """One thing a person did, for usage stats (tracking.py).
+
+    Deliberately thin: who, what, when. No address, no student number, no
+    request details — the row is only ever counted, never read back to anyone.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    name = db.Column(db.String(40), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+    __table_args__ = (
+        db.Index("ix_event_name_created_at", "name", "created_at"),
+    )
 
 
 class Settings(db.Model):

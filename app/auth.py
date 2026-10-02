@@ -29,7 +29,7 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import IntegrityError
 
-from . import db, limiter
+from . import db, limiter, tracking
 from .models import College, Settings, User
 
 bp = Blueprint("auth", __name__)
@@ -205,6 +205,7 @@ def google_callback():
     if current_user.is_authenticated and current_user.id != user.id:
         logout_user()
     login_user(user, remember=True)
+    tracking.note_login(user, created=created)
 
     target = session.pop(NEXT_KEY, None)
     if created:
@@ -236,6 +237,7 @@ def dev_login():
         flash("That address belongs to an account that signs in with Google.", "error")
         return redirect(url_for("auth.dev_login"))
     login_user(user, remember=True)
+    tracking.note_login(user, created=created)
     return redirect(url_for("core.upload" if created else "core.dashboard"))
 
 

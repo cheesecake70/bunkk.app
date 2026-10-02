@@ -30,7 +30,7 @@ from sqlalchemy.exc import IntegrityError
 
 from report_parser import Lecture, LectureStatus, ParsedReport, parse_pdf
 
-from . import db
+from . import db, tracking
 from .models import (
     CourseAlias,
     LectureChange,
@@ -208,6 +208,7 @@ def _merge_or_ask(user, semester, snapshot, report, *, before=None) -> MergeResu
 
     result = _apply(user, snapshot, report, mapping, before=before)
     result.new_subjects = created
+    tracking.record(user, "report_uploaded")
     db.session.commit()
     return result
 
@@ -260,6 +261,7 @@ def resolve_proposals(user: User, snapshot_id: int, decisions: dict[str, str]) -
 
     result = _apply(user, snapshot, report, mapping)
     result.new_subjects = created
+    tracking.record(user, "report_uploaded")
     db.session.commit()
     return result
 

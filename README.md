@@ -148,6 +148,7 @@ app/                 Flask app (factory, models, auth, pages, JSON API, merge)
   planning.py        advanced mode: timetable, calendar, wallet, day verdicts
   auth.py            Google sign-in (Authlib), the only way in
   account.py         profile, sign-out-everywhere, account deletion
+  tracking.py        usage stats: last sign-in / last seen, events, /admin/stats
   cache.py           per-request memoisation, dropped on write
 report_parser/       pure PDF -> typed data (no Flask/DB imports)
 attendance_engine/   pure math: budgets, percentages, coverage
@@ -203,6 +204,23 @@ counted in memory per gunicorn worker. That is fine for a first launch; point
 carry the user's row id, and SQLite hands a deleted row's id to the next account
 created — so a leftover cookie could reach a stranger's ledger. They carry a
 random token now; the old cookies match nothing and resolve to a login page.
+
+### Seeing who uses it
+
+Bunkk keeps its own usage record rather than loading a third-party tracker
+(`app/tracking.py`): each account's last sign-in and last-seen time, plus an
+`event` row — account id, name, time, nothing else — for sign-ups, sign-ins,
+the first visit of each day, and the actions that matter (`report_uploaded`,
+`absence_planned`, `timetable_saved`, `checkpoint_added`, `holiday_marked`,
+`semester_end_set`, `prediction_made`).
+
+```bash
+flask stats        # accounts, active in 1/7/30 days, events, a 14-day table
+```
+
+The same figures, plus the account list, are at `/admin/stats` for the Google
+addresses listed in `BUNKK_ADMIN_EMAILS`; everyone else gets a 404. Days are
+UTC. Deleting an account deletes its events with it.
 
 Back up `instance/bunkk.db` *and* `instance/uploads/` together —
 the ledger is replayable from the snapshots only if the PDFs survive with it.

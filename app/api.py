@@ -14,7 +14,7 @@ from report_parser import ReportParseError
 
 from attendance_engine import DayVerdict
 
-from . import db, limiter, planning
+from . import db, limiter, planning, tracking
 from .merge import MergeError, MergeResult, ingest, resolve_proposals
 from .models import LectureInstance, PlannedAbsence, Subject
 from .services import (
@@ -601,6 +601,7 @@ def add_absence():
         db.session.rollback()
         return error
 
+    tracking.record(current_user, "absence_planned")
     db.session.commit()
     # The id rides along so the caller can offer Undo without re-querying.
     return jsonify(dict(_wallet_payload(focus=on_date), absence_id=row.id))
@@ -641,6 +642,7 @@ def add_absences():
         db.session.flush()
         ids[f"{item.get('subject_id')}|{item.get('start')}"] = row.id
 
+    tracking.record(current_user, "absence_planned")
     db.session.commit()
     return jsonify(dict(_wallet_payload(focus=on_date), absence_ids=ids))
 
