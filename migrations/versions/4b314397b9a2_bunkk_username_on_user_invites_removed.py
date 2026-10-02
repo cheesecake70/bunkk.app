@@ -1,4 +1,4 @@
-"""BUNKR: username on user, invites removed
+"""BUNKK: username on user, invites removed
 
 Revision ID: 4b314397b9a2
 Revises: f49e695321c6

@@ -1,4 +1,4 @@
-/* BUNKR landing page. Vanilla, no libraries.
+/* BUNKK landing page. Vanilla, no libraries.
 
    One scroll handler, run through requestAnimationFrame, turns scroll position
    into a handful of CSS custom properties and classes. CSS does the drawing.

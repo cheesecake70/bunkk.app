@@ -8,14 +8,14 @@ covered by a test where one makes sense.
 - [x] CSRF protection on every form and JSON call (Flask-WTF `CSRFProtect`,
       token in a `<meta>` tag, sent as `X-CSRFToken` by `static/js/api.js`).
 - [x] The OAuth redirect URL can no longer be poisoned through the Host header
-      (`TRUSTED_HOSTS` from `BUNKR_TRUSTED_HOSTS`, `ProxyFix`, https scheme).
+      (`TRUSTED_HOSTS` from `BUNKK_TRUSTED_HOSTS`, `ProxyFix`, https scheme).
 - [x] A corrupt or non-PDF upload answers 422, never 500.
 - [x] Per-IP rate limit on starting a Google sign-in (Flask-Limiter; storage
       from `RATELIMIT_STORAGE_URI`). Finishing one is never throttled, so a
       campus NAT can't lock a hostel out.
 - [x] Remember-me cookie is `Secure`, `HttpOnly`, `SameSite=Lax` in production.
 - [x] Production refuses to boot without `SECRET_KEY`, `DATABASE_URL`,
-      `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `BUNKR_TRUSTED_HOSTS`.
+      `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `BUNKK_TRUSTED_HOSTS`.
 - [x] Golden test PDFs carry a fictional student instead of a real one.
 - [x] No passwords at all: sign-in is Google (OpenID Connect) only, and a
       claim without `email_verified` is refused, so nobody can squat on
@@ -61,7 +61,7 @@ which is the trigger ADR-2 already names.
 - The "identity claimed" message names the other account's username and a
   masked email. This is deliberate: the reader is almost always the owner.
 - `/login/dev` signs in as any address without Google. It answers 404
-  unless the app is in debug mode *and* `BUNKR_DEV_LOGIN=1`; production never
+  unless the app is in debug mode *and* `BUNKK_DEV_LOGIN=1`; production never
   runs in debug mode.
 
 ## Operator steps at deploy time

@@ -189,10 +189,10 @@
   function persist() {
     if (!actions || isDraft) return;                  // no JS takeover, no autosave
     setStatus("Saving…", "saving");
-    window.BunkrApi.put("/api/timetable", { blocks: collect() }).then(function (res) {
+    window.BunkkApi.put("/api/timetable", { blocks: collect() }).then(function (res) {
       if (!res.ok) {
         setStatus("Couldn't save — reloading", "error");
-        window.BunkrToast.error(res.body.error || "Couldn't save the timetable.");
+        window.BunkkToast.error(res.body.error || "Couldn't save the timetable.");
         /* Reload rather than leave the page showing a grid the server rejected:
            what is on screen would otherwise claim to be saved and not be. */
         window.setTimeout(function () { window.location.reload(); }, 1500);

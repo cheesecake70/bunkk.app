@@ -291,7 +291,7 @@ class TestResponseHardening:
 
 
 class HostConfig(config.TestConfig):
-    TRUSTED_HOSTS = ["bunkr.test"]
+    TRUSTED_HOSTS = ["bunkk.test"]
     SERVER_NAME = None
 
 
@@ -313,9 +313,9 @@ class TestTrustedHosts:
             assert forged.status_code == 400
             assert not go.called
 
-            real = client.get("/login/google", headers={"Host": "bunkr.test"})
+            real = client.get("/login/google", headers={"Host": "bunkk.test"})
             assert real.status_code == 302
-            assert go.call_args.args[0] == "http://bunkr.test/auth/google/callback"
+            assert go.call_args.args[0] == "http://bunkk.test/auth/google/callback"
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ class TestTrustedHosts:
 
 class TestProductionGuard:
     REQUIRED = ("SECRET_KEY", "DATABASE_URL", "GOOGLE_CLIENT_ID",
-                "GOOGLE_CLIENT_SECRET", "BUNKR_TRUSTED_HOSTS")
+                "GOOGLE_CLIENT_SECRET", "BUNKK_TRUSTED_HOSTS")
 
     def test_missing_variables_are_named(self, monkeypatch):
         for name in self.REQUIRED:
@@ -334,7 +334,7 @@ class TestProductionGuard:
         with pytest.raises(RuntimeError) as err:
             create_app("config.ProdConfig")
         assert "DATABASE_URL" in str(err.value)
-        assert "BUNKR_TRUSTED_HOSTS" in str(err.value)
+        assert "BUNKK_TRUSTED_HOSTS" in str(err.value)
 
     def test_the_dev_secret_is_refused(self, monkeypatch):
         monkeypatch.setenv("SECRET_KEY", config.DEV_SECRET_KEY)
@@ -349,13 +349,13 @@ class TestProductionGuard:
         monkeypatch.setenv("DATABASE_URL", "sqlite://")
         monkeypatch.setenv("GOOGLE_CLIENT_ID", "id.apps.googleusercontent.com")
         monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "GOCSPX-x")
-        monkeypatch.setenv("BUNKR_TRUSTED_HOSTS", "bunkr.example, www.bunkr.example")
+        monkeypatch.setenv("BUNKK_TRUSTED_HOSTS", "bunkk.example, www.bunkk.example")
         importlib.reload(config)
         try:
             app = create_app(config.ProdConfig)
         finally:
             importlib.reload(config)
-        assert app.config["TRUSTED_HOSTS"] == ["bunkr.example", "www.bunkr.example"]
+        assert app.config["TRUSTED_HOSTS"] == ["bunkk.example", "www.bunkk.example"]
         assert app.config["REMEMBER_COOKIE_SECURE"] is True
         assert app.config["REMEMBER_COOKIE_SAMESITE"] == "Lax"
         assert app.config["SESSION_COOKIE_SECURE"] is True

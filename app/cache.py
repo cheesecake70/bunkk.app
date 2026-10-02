@@ -24,7 +24,7 @@ from flask import g, has_request_context
 
 #: Where the memo lives on Flask's per-request `g`. Named rather than anonymous
 #: so `drop` and the tests can find it.
-STORE = "_bunkr_request_cache"
+STORE = "_bunkk_request_cache"
 
 
 def per_request(fn):

@@ -63,7 +63,7 @@
     button.disabled = true;
     clearErrors(card);
 
-    window.BunkrApi
+    window.BunkkApi
       .put("/api/subjects/" + card.dataset.subjectId, payload)
       .then(function (res) {
         button.disabled = false;
@@ -75,7 +75,7 @@
               setError(card, field, errors[field]);
             });
           } else {
-            window.BunkrToast.error(res.body.error || "Couldn't save that.");
+            window.BunkkToast.error(res.body.error || "Couldn't save that.");
           }
           return;
         }
@@ -84,7 +84,7 @@
            only comes back on a further change. */
         rebase(card);
         button.hidden = true;
-        window.BunkrToast.show("Saved " + (res.body.subject.code || "subject") + ".");
+        window.BunkkToast.show("Saved " + (res.body.subject.code || "subject") + ".");
       });
   }
 

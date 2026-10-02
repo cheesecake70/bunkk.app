@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Calendar · Bunkr{% endblock %}
+{% block title %}Calendar · Bunkk{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div class="eyebrow">The whole semester</div>
   <h1>Semester calendar</h1>
   <p class="page-head__sub">
-    Tap any future day to plan around it. Bunkr only ever looks forwards, so you
+    Tap any future day to plan around it. Bunkk only ever looks forwards, so you
     never have to fill in the past.
   </p>
 </div>
@@ -19,7 +19,7 @@
       <input class="input input--mono" id="end_date" name="end_date" type="date"
              value="{{ semester_end.isoformat() if semester_end else '' }}" required>
       <div class="field__hint">
-        How far Bunkr can plan. Exams before then go on the
+        How far Bunkk can plan. Exams before then go on the
         <a href="{{ url_for('core.checkpoints') }}">checkpoints page</a>.
       </div>
     </div>
@@ -33,7 +33,7 @@
 <div class="banner" style="margin-bottom:var(--sp-5)">
   <div class="banner__body">
     <div class="banner__title">No timetable confirmed yet</div>
-    <div class="banner__text">Days only mean anything once Bunkr knows your weekly grid.</div>
+    <div class="banner__text">Days only mean anything once Bunkk knows your weekly grid.</div>
   </div>
   <a class="btn btn--sm" href="{{ url_for('core.timetable') }}">Set it up</a>
 </div>

@@ -7,10 +7,10 @@ how long a hostile PDF can keep a worker busy.
 import multiprocessing
 import os
 
-bind = os.environ.get("BUNKR_BIND", "127.0.0.1:8000")
+bind = os.environ.get("BUNKK_BIND", "127.0.0.1:8000")
 workers = int(os.environ.get("WEB_CONCURRENCY", min(4, multiprocessing.cpu_count() * 2 + 1)))
 worker_class = "gthread"
-threads = int(os.environ.get("BUNKR_THREADS", "4"))
+threads = int(os.environ.get("BUNKK_THREADS", "4"))
 timeout = 60
 graceful_timeout = 30
 keepalive = 5

@@ -27,7 +27,7 @@
     return wrap;
   }
 
-  /* Dotted rather than BunkrFmt's "Thu 27 Aug": these sit in a dense list of
+  /* Dotted rather than BunkkFmt's "Thu 27 Aug": these sit in a dense list of
      forty changed lectures, where the short form is what makes it scannable. */
   function fmtDate(iso) {
     var parts = String(iso).split("-");
@@ -35,7 +35,7 @@
   }
 
   function fmtTime(iso) {
-    return window.BunkrFmt.time(iso);
+    return window.BunkkFmt.time(iso);
   }
 
   function plural(n, word) {
@@ -138,7 +138,7 @@
   function renderProposals(data) {
     result.innerHTML = "";
     result.appendChild(banner("info", "One quick question",
-      "A course name changed. Tell Bunkr once and it will remember forever."));
+      "A course name changed. Tell Bunkk once and it will remember forever."));
 
     var card = el("div", "card");
     var answers = {};
@@ -180,17 +180,17 @@
     var confirm = el("button", "btn btn--accent", "Save and merge");
     confirm.addEventListener("click", function () {
       if (Object.keys(answers).length < data.proposals.length) {
-        window.BunkrToast.error("Answer each question first.");
+        window.BunkkToast.error("Answer each question first.");
         return;
       }
       confirm.classList.add("is-loading");
       confirm.textContent = "Merging…";
       fetch("/api/reports/" + data.snapshot_id + "/resolve", {
         method: "POST",
-        headers: window.BunkrApi.headers({ "Content-Type": "application/json" }),
+        headers: window.BunkkApi.headers({ "Content-Type": "application/json" }),
         body: JSON.stringify({ decisions: answers })
       })
-        .then(window.BunkrApi.readJson)
+        .then(window.BunkkApi.readJson)
         .then(function (res) {
           if (!res.ok) { showError(res.body.error || "Something went wrong."); return; }
           renderDiff(res.body);
@@ -235,7 +235,7 @@
     var token = document.createElement("input");
     token.type = "hidden";
     token.name = "csrf_token";
-    token.value = window.BunkrApi.csrfToken();
+    token.value = window.BunkkApi.csrfToken();
     form.appendChild(token);
 
     var button = el("button", "btn btn--sm", "Sign in as " + claimed.username);
@@ -260,8 +260,8 @@
     var form = new FormData();
     form.append("report", file);
 
-    fetch("/api/reports", { method: "POST", body: form, headers: window.BunkrApi.headers() })
-      .then(window.BunkrApi.readJson)
+    fetch("/api/reports", { method: "POST", body: form, headers: window.BunkkApi.headers() })
+      .then(window.BunkkApi.readJson)
       .then(function (res) {
         if (!res.ok) {
           showError(res.body.error || "Something went wrong.", res.body.claimed_by);

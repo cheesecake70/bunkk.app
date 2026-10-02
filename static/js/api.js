@@ -1,4 +1,4 @@
-/* The one place Bunkr talks to its JSON API.
+/* The one place Bunkk talks to its JSON API.
 
    Every caller wants the same three things: send JSON, get JSON back, and be
    told plainly when that didn't work. Before this, three files each grew their
@@ -51,7 +51,7 @@
       });
   }
 
-  window.BunkrApi = {
+  window.BunkkApi = {
     get: function (url) { return request("GET", url); },
     post: function (url, payload) { return request("POST", url, payload); },
     put: function (url, payload) { return request("PUT", url, payload); },

@@ -1,4 +1,4 @@
-"""Bunkr Flask application factory."""
+"""Bunkk Flask application factory."""
 from __future__ import annotations
 
 import logging
@@ -62,7 +62,7 @@ def create_app(config_object=None) -> Flask:
     )
 
     app.config.from_object(config_object or os.environ.get(
-        "BUNKR_CONFIG", "config.DevConfig"
+        "BUNKK_CONFIG", "config.DevConfig"
     ))
     os.makedirs(app.instance_path, exist_ok=True)
     _check_environment(app)
@@ -234,7 +234,7 @@ def _register_error_handlers(app: Flask) -> None:
         db.session.rollback()
         app.logger.warning("Write lock still held after busy timeout on %s %s",
                            request.method, request.path)
-        message = "Bunkr is busy saving other students' reports. Try again in a few seconds."
+        message = "Bunkk is busy saving other students' reports. Try again in a few seconds."
         headers = {"Retry-After": "5"}
         if _wants_json():
             return jsonify(error=message), 503, headers
