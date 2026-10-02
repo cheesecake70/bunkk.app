@@ -522,28 +522,26 @@
    ====================================================================== #}
 <section class="lp-features" aria-labelledby="lp-feat">
   <p class="eyebrow">And the rest</p>
-  <h2 id="lp-feat" class="lp-features__title" data-lp-reveal>Small things that keep the numbers honest.</h2>
+  <h2 id="lp-feat" class="lp-features__title" data-lp-reveal>Because no semester goes exactly to plan.</h2>
 
   <div class="lp-grid">
 
     <div class="lp-rv" data-lp-reveal style="--rot:-1.2deg">
       <article class="card lp-card" data-lp-tilt>
-        <p class="eyebrow">Subjects</p>
-        <h3>Every subject, one row</h3>
-        <div class="lp-vig" aria-hidden="true">
-          <div class="table-wrap">
-            <table class="subjects">
-              <thead><tr><th>Subject</th><th class="cell-right">Now</th><th class="cell-right">Can miss</th><th>Status</th></tr></thead>
-              <tbody>
-                <tr><td class="subj-code">CS201</td><td class="cell-num">76.9%</td><td class="cell-num">3</td><td><span class="badge badge--safe">Safe</span></td></tr>
-                <tr><td class="subj-code">MA102</td><td class="cell-num">71.4%</td><td class="cell-num">1</td><td><span class="badge badge--warn">Tight</span></td></tr>
-                <tr><td class="subj-code">PH101</td><td class="cell-num">64.0%</td><td class="cell-num">0</td><td><span class="badge badge--danger">Attend 4</span></td></tr>
-                <tr><td class="subj-code">EE110</td><td class="cell-num">55.0%</td><td class="cell-num">0</td><td><span class="badge badge--pending">3 pending</span></td></tr>
-              </tbody>
-            </table>
+        <p class="eyebrow">Half days</p>
+        <h3>It finds half-day skips too</h3>
+        <div class="lp-vig stack lp-half" aria-hidden="true">
+          <div class="sheet-verdict verdict--partial"><b>Part skip</b> <span class="text-muted">Skip CS201; no room left in MA102.</span></div>
+          <div class="sheet-partial">
+            <div class="sheet-partial__note">Leave after 12:00 &mdash; skips CS201. 1h free.</div>
+            <span class="btn btn--sm btn--primary">Leave after 12:00</span>
+          </div>
+          <div class="sheet-partial">
+            <div class="sheet-partial__note">Arrive by 11:00 &mdash; skips EE110, PH105. 2h free.</div>
+            <span class="btn btn--sm btn--primary">Arrive by 11:00</span>
           </div>
         </div>
-        <p class="lp-card__text">Safe, tight, or how many in a row you need to attend to get back. Pending ones are called out, not hidden.</p>
+        <p class="lp-card__text">Sometimes you can't afford a full day off. Coming in late or leaving early can still fit the budget, and BUNKK tells you when it does.</p>
       </article>
     </div>
 
@@ -572,56 +570,52 @@
 
     <div class="lp-rv" data-lp-reveal style="--rot:1.2deg">
       <article class="card lp-card" data-lp-tilt>
-        <p class="eyebrow">Checkpoints</p>
-        <h3>Plan to the date that matters</h3>
+        <p class="eyebrow">Holidays</p>
+        <h3>Mark holidays, fix the count</h3>
         <div class="lp-vig" aria-hidden="true">
-          <div class="lp-list">
-            <div class="lecture">
-              <div><span class="mono">12 Nov</span> <span style="margin-left:var(--sp-2)">Mid-sem audit</span></div>
-              <div class="row" style="gap:var(--sp-2)"><span class="badge badge--warn">Planning to this one</span></div>
-            </div>
-            <div class="lecture">
-              <div><span class="mono">04 Dec</span> <span style="margin-left:var(--sp-2)">Lab viva</span></div>
-              <div class="row" style="gap:var(--sp-2)"><span class="badge badge--neutral">Upcoming</span></div>
-            </div>
-            <div class="lecture">
-              <div><span class="mono">20 Jan</span> <span style="margin-left:var(--sp-2)">Semester end</span></div>
-              <div class="row" style="gap:var(--sp-2)"><span class="badge badge--neutral">Always last</span></div>
-            </div>
+          <div class="cal cal--5 lp-hol">
+            <div class="cal__dow">Mon</div><div class="cal__dow">Tue</div><div class="cal__dow">Wed</div><div class="cal__dow">Thu</div><div class="cal__dow">Fri</div>
+            <span class="cal__day"><span class="mono">2</span></span>
+            <span class="cal__day"><span class="mono">3</span></span>
+            <span class="cal__day"><span class="mono">4</span></span>
+            <span class="cal__day"><span class="mono">5</span></span>
+            <span class="cal__day"><span class="mono">6</span></span>
+            <span class="cal__day is-holiday"><span class="mono">9</span><span class="cal__tag">off</span></span>
+            <span class="cal__day is-holiday"><span class="mono">10</span><span class="cal__tag">off</span></span>
+            <span class="cal__day"><span class="mono">11</span></span>
+            <span class="cal__day"><span class="mono">12</span></span>
+            <span class="cal__day"><span class="mono">13</span></span>
           </div>
+          <p class="lp-hol__note mono">2 days off &middot; 9 fewer classes to count</p>
         </div>
-        <p class="lp-card__text">Budgets count to your next checkpoint, not just the end of term. Add the audits that actually check your attendance.</p>
+        <p class="lp-card__text">A holiday means fewer classes left in the term. Mark it on the calendar and every total and budget is recounted to match.</p>
       </article>
     </div>
 
     <div class="lp-rv" data-lp-reveal style="--rot:-1deg">
       <article class="card lp-card" data-lp-tilt>
-        <p class="eyebrow">Your data</p>
-        <h3>Your data is yours</h3>
+        <p class="eyebrow">Known absences</p>
+        <h3>Commit absences ahead of time</h3>
         <div class="lp-vig" aria-hidden="true">
-          <div class="card lp-danger">
-            <h3>Delete this account</h3>
-            <p>Removes your ledger, your uploaded PDFs and your settings. No backup.</p>
-            <div class="field" style="margin-bottom:var(--sp-3)">
-              <label>Confirm with your password</label>
-              <input class="input" type="password" tabindex="-1" disabled placeholder="Password">
+          <div class="lp-list">
+            <div class="lecture">
+              <span class="lecture__when">Thu 15 Oct &mdash; CS201</span>
+              <span class="btn btn--sm btn--danger">Remove</span>
             </div>
-            <button type="button" class="btn btn--sm btn--danger" tabindex="-1">Delete everything</button>
+            <div class="lecture">
+              <span class="lecture__when">Fri 23 Oct &mdash; whole day</span>
+              <span class="btn btn--sm btn--danger">Remove</span>
+            </div>
+            <div class="lecture">
+              <span class="lecture__when">Mon 02 Nov &mdash; whole day</span>
+              <span class="btn btn--sm btn--danger">Remove</span>
+            </div>
           </div>
         </div>
-        <p class="lp-card__text">One password-confirmed button wipes the lot, raw PDFs included.</p>
+        <p class="lp-card__text">A wedding, a trip, a fest. Commit the days you already know you'll miss, so every verdict is worked out with them already counted.</p>
       </article>
     </div>
 
-  </div>
-
-  <div class="lp-facts" data-lp-reveal>
-    <p class="eyebrow">Straight answers</p>
-    <ul class="lp-facts__list">
-      <li><span class="mono">PDF</span> You upload it yourself. BUNKK doesn't log into your portal.</li>
-      <li><span class="mono">70% / 75%</span> Default limits: per subject, then overall. Change them in settings.</li>
-      <li><span class="mono">Detailed</span> It needs the detailed report. The summary export won't do.</li>
-    </ul>
   </div>
 </section>
 

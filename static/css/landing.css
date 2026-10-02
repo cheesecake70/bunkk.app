@@ -569,19 +569,11 @@ html { scroll-behavior: smooth; }
 .lp-vig .table-wrap { box-shadow: var(--shadow-sm); }
 .lp-card__text { margin: 0; font-size: var(--text-sm); color: var(--ink-muted); }
 .lp-list .lecture { grid-template-columns: 1fr auto; }
-.lp-danger { background: var(--danger-soft); box-shadow: var(--shadow-sm); }
-.lp-danger h3 { font-family: var(--font-body); font-weight: 800; font-size: var(--text-lg); margin-bottom: var(--sp-2); }
-.lp-danger p { font-size: var(--text-sm); margin: 0 0 var(--sp-3); }
-.lp-danger .input { max-width: 260px; }
+.lp-half .sheet-verdict, .lp-half .sheet-partial { margin: 0; }
+.lp-hol .cal__day { aspect-ratio: auto; min-height: 48px; cursor: default; }
+.lp-hol__note { margin: var(--sp-3) 0 0; font-size: var(--text-xs); font-weight: 700; }
 @media (max-width: 520px) { .lp-vig .banner { flex-direction: column; align-items: flex-start; } }
 
-.lp-facts { margin-top: var(--sp-7); background: var(--soft-cyan); border: var(--border-heavy);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--sp-5); }
-.lp-facts .eyebrow { margin: 0 0 var(--sp-4); }
-.lp-facts__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-4);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
-.lp-facts__list li { font-size: var(--text-sm); }
-.lp-facts__list .mono { display: block; font-weight: 700; font-size: var(--text-lg); margin-bottom: 2px; }
 
 /* One-shot reveals: slide in, wipe open. JS adds .is-in, then .is-done. */
 .lp-js [data-lp-reveal] { transform: translateY(44px) rotate(var(--rot, 0deg)); clip-path: inset(0 0 100% 0);
