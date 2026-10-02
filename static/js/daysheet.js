@@ -25,6 +25,9 @@
     var openDate = null;
     var dirty = false;
 
+    var esc = window.BunkrHtml.esc;
+    var attr = window.BunkrHtml.attr;
+
     function cellFor(date) {
       return document.querySelector(cellSelector + '[data-date="' + date + '"]');
     }
@@ -57,12 +60,6 @@
       badge.textContent = next;
     }
 
-    function escapeHtml(value) {
-      var box = document.createElement("span");
-      box.textContent = value == null ? "" : value;
-      return box.innerHTML;
-    }
-
     function boxFor(item) {
       return body.querySelector(
         '.js-lecture[data-subject="' + item.subject_id +
@@ -81,7 +78,11 @@
       if (!pending.length) return;
 
       button.disabled = true;
-      window.BunkrApi
+      window.BunkrCommit.guard(pending.map(function (item) {
+        return { date: openDate, subject_id: item.subject_id, start: item.start };
+      })).then(function (go) {
+        if (!go) { button.disabled = false; return; }
+        return window.BunkrApi
         .post("/api/absences/batch", { date: openDate, lectures: pending })
         .then(function (res) {
           button.disabled = false;
@@ -101,46 +102,65 @@
           dirty = true;
           var cell = cellFor(openDate);
           setCount(cell, sheetCount());
+          paintVerdict(res.body.day);
           if (options.onChange) options.onChange(res.body, openDate, cell);
 
-          window.BunkrToast.show(
-            "Planned to miss " + pending.length + " on " + openDate,
-            {
-              /* One at a time: the same reason the commit is one request —
-                 four deletes in flight together race the same wallet. */
-              onUndo: function () {
-                pending.reduce(function (chain, item) {
-                  return chain.then(function () {
-                    var box = boxFor(item);
-                    if (!box || !box.checked || !box.dataset.absence) return;
-                    return window.BunkrApi
-                      .del("/api/absences/" + box.dataset.absence)
-                      .then(function (res) {
-                        if (!res.ok) return;
-                        box.checked = false;
-                        box.dataset.absence = "";
-                      });
+          /* One at a time: the same reason the commit is one request — four
+             deletes in flight together race the same wallet. */
+          var undo = function () {
+            pending.reduce(function (chain, item) {
+              return chain.then(function () {
+                var box = boxFor(item);
+                if (!box || !box.checked || !box.dataset.absence) return;
+                return window.BunkrApi
+                  .del("/api/absences/" + box.dataset.absence)
+                  .then(function (res) {
+                    if (!res.ok) return;
+                    box.checked = false;
+                    box.dataset.absence = "";
                   });
-                }, Promise.resolve()).then(function () {
-                  /* Only the count is patched here. `dirty` is already set, so
-                     closing the sheet reloads and every other figure catches
-                     up at once rather than being patched from a payload the
-                     undo never asked the server for. */
-                  setCount(cellFor(openDate), sheetCount());
-                });
-              }
-            }
-          );
+              });
+            }, Promise.resolve()).then(function () {
+              /* Only the count is patched here. `dirty` is already set, so
+                 closing the sheet reloads and every other figure catches up at
+                 once rather than being patched from a payload the undo never
+                 asked the server for. */
+              setCount(cellFor(openDate), sheetCount());
+            });
+          };
+
+          if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
+            window.BunkrToast.show(
+              "Planned to miss " + pending.length + " on " +
+              window.BunkrFmt.date(openDate),
+              { onUndo: undo }
+            );
+          }
         });
+      });
+    }
+
+    /* The day's own verdict, above its classes. The sheet is where the decision
+       is actually taken, and it was the one surface that never said what the
+       decision would cost. */
+    function paintVerdict(day) {
+      var host = document.getElementById("sheet-verdict");
+      if (!host || !day) return;
+      var words = window.BUNKR_VERDICTS || {};
+      host.className = "sheet-verdict verdict--" + day.verdict +
+        (day.over_budget ? " is-over" : "");
+      host.innerHTML =
+        '<b>' + esc(words[day.verdict] || day.verdict) + "</b> " +
+        '<span class="text-muted">' + esc(day.reason || "") + "</span>";
     }
 
     function render(data) {
-      title.textContent = data.label || data.date;
+      title.textContent = data.label || window.BunkrFmt.longDate(data.date);
 
       if (data.holiday) {
         body.innerHTML =
           '<p class="text-muted">Marked as a holiday' +
-          (data.holiday.name ? " (" + data.holiday.name + ")" : "") +
+          (data.holiday.name ? " (" + esc(data.holiday.name) + ")" : "") +
           " — no classes count on this day.</p>";
         return;
       }
@@ -149,7 +169,7 @@
         return;
       }
 
-      var html = "";
+      var html = '<div id="sheet-verdict" class="sheet-verdict"></div>';
       if (!data.in_horizon) {
         html += '<div class="banner banner--info" style="margin-bottom:var(--sp-4)">' +
           '<div class="banner__body"><div class="banner__text">' +
@@ -158,16 +178,17 @@
           "</div></div></div>";
       }
 
+      var wholeDayId = data.whole_day_absence_id || "";
       html += '<label class="check" style="margin-bottom:var(--sp-3)">' +
         '<input type="checkbox" id="sheet-whole-day"' +
-        ' data-absence="' + (data.whole_day_absence_id || "") + '"' +
-        (data.whole_day_absence_id ? " checked" : "") + ">" +
+        ' data-absence="' + attr(wholeDayId) + '"' +
+        (wholeDayId ? " checked" : "") + ">" +
         "<span>Miss the whole day</span></label>";
 
       /* One quick action for the half-day the maths recommends. Ticking five
          boxes by hand is the same commitment, but only one of the two is an
-         answer to "when can I leave?". */
-      if (data.partial && data.partial.skippable.length) {
+         answer to "when can I leave?". Pointless while the whole day is off. */
+      if (!wholeDayId && data.partial && data.partial.skippable.length) {
         var when = data.partial.leave_after
           ? "Leave after " + data.partial.leave_after.slice(0, 5)
           : (data.partial.arrive_at
@@ -175,10 +196,10 @@
               : null);
         if (when) {
           html += '<div class="sheet-partial">' +
-            '<div class="sheet-partial__note">' + escapeHtml(data.partial.reason) +
+            '<div class="sheet-partial__note">' + esc(data.partial.reason) +
             "</div>" +
             '<button class="btn btn--sm btn--primary" type="button" id="sheet-partial">' +
-            escapeHtml(when) + "</button></div>";
+            esc(when) + "</button></div>";
         }
       }
 
@@ -194,26 +215,45 @@
       rows.forEach(function (row) {
         if (row.kind === "break") {
           html += '<div class="lecture lecture--break">' +
-            '<span><span class="mono">' + row.span.start.slice(0, 5) + "–" +
-            row.span.end.slice(0, 5) + '</span>' +
-            '<span style="margin-left:var(--sp-3)">' + escapeHtml(row.span.label) +
+            '<span><span class="mono">' + esc(row.span.start.slice(0, 5)) + "–" +
+            esc(row.span.end.slice(0, 5)) + '</span>' +
+            '<span style="margin-left:var(--sp-3)">' + esc(row.span.label) +
             "</span></span></div>";
           return;
         }
+        /* A whole-day plan owns every lecture on the day, exactly as it does on
+           Today: the boxes show as ticked and are frozen, because the day is
+           what you'd undo, not the class. Each keeps its own row id in
+           data-own-absence so lifting the day restores what was underneath. */
         var lecture = row.lecture;
-        html += '<label class="lecture">' +
-          '<span><span class="mono">' + lecture.start.slice(0, 5) + "–" +
-          lecture.end.slice(0, 5) + '</span> <strong style="margin-left:var(--sp-3)">' +
-          lecture.code + "</strong></span>" +
+        var own = lecture.absence_id || "";
+        var covered = !!wholeDayId;
+        /* The same "N left" the Today page shows against each class. This is
+           where the decision is made, so this is where the number belongs. */
+        var badge = lecture.budget === null || lecture.budget === undefined
+          ? ""
+          : ' <span class="badge badge--' + attr(lecture.verdict || "neutral") +
+            '">' + esc(lecture.budget) + " left</span>";
+        var clash = lecture.same_slot
+          ? ' <span class="badge badge--neutral">same slot</span>' : "";
+        html += '<label class="lecture' + (covered || own ? " is-planned" : "") +
+          (lecture.same_slot ? " lecture--clash" : "") + '">' +
+          '<span><span class="mono">' + esc(lecture.start.slice(0, 5)) + "–" +
+          esc(lecture.end.slice(0, 5)) + '</span> <strong style="margin-left:var(--sp-3)">' +
+          esc(lecture.code) + "</strong>" + badge + clash + "</span>" +
           '<span class="check"><input type="checkbox" class="js-lecture"' +
-          ' data-subject="' + lecture.subject_id + '"' +
-          ' data-start="' + lecture.start + '"' +
-          ' data-absence="' + (lecture.absence_id || "") + '"' +
-          (lecture.absence_id ? " checked" : "") + "></span></label>";
+          ' data-subject="' + attr(lecture.subject_id) + '"' +
+          ' data-start="' + attr(lecture.start) + '"' +
+          ' data-absence="' + attr(covered ? wholeDayId : own) + '"' +
+          ' data-own-absence="' + attr(own) + '"' +
+          (covered || own ? " checked" : "") +
+          (covered ? ' disabled title="The whole day is planned off"' : "") +
+          "></span></label>";
       });
       html += "</div>";
 
       body.innerHTML = html;
+      paintVerdict(data.plan);
 
       var partialBtn = document.getElementById("sheet-partial");
       if (partialBtn) {
@@ -231,11 +271,32 @@
       window.BunkrApi.get("/api/day/" + date).then(function (res) {
         if (!res.ok) {
           body.innerHTML = '<p class="text-danger">' +
-            (res.body.error || "Couldn't load that day.") + "</p>";
+            esc(res.body.error || "Couldn't load that day.") + "</p>";
           return;
         }
         res.body.label = label;
         render(res.body);
+      });
+    }
+
+    /* Ticking "miss the whole day" takes the lectures with it, and unticking
+       gives each one back its own plan. Mirrors setDayState in today.js — the
+       same decision, so it has to look the same on both pages. */
+    function applyWholeDay(absenceId) {
+      [].forEach.call(body.querySelectorAll(".js-lecture"), function (box) {
+        var own = box.dataset.ownAbsence || "";
+        box.disabled = !!absenceId;
+        if (absenceId) {
+          box.title = "The whole day is planned off";
+          box.checked = true;
+          box.dataset.absence = absenceId;
+        } else {
+          box.removeAttribute("title");
+          box.checked = !!own;
+          box.dataset.absence = own;
+        }
+        var row = box.closest(".lecture");
+        if (row) row.classList.toggle("is-planned", box.checked);
       });
     }
 
@@ -247,43 +308,64 @@
       var cell = cellFor(openDate);
       box.disabled = true;
 
-      var request;
-      if (box.checked) {
-        var payload = { date: openDate };
-        if (!whole) {
-          payload.subject_id = parseInt(box.dataset.subject, 10);
-          payload.start = box.dataset.start;
-        }
-        request = window.BunkrApi.post("/api/absences", payload);
-      } else {
-        request = window.BunkrApi.del("/api/absences/" + box.dataset.absence);
+      var payload = { date: openDate };
+      if (!whole) {
+        payload.subject_id = parseInt(box.dataset.subject, 10);
+        payload.start = box.dataset.start;
       }
 
-      request.then(function (res) {
-        box.disabled = false;
-        if (!res.ok) {
-          box.checked = !box.checked;          // the server said no; show that
-          window.BunkrToast.error(res.body.error || "Couldn't save that.");
+      // Unticking gives budget back, so only a new commitment is checked.
+      var ready = box.checked
+        ? window.BunkrCommit.guard([payload])
+        : Promise.resolve(true);
+
+      ready.then(function (go) {
+        if (!go) {
+          box.checked = false;                 // they said no; show that
+          box.disabled = false;
           return;
         }
 
-        dirty = true;
-        box.dataset.absence = box.checked ? res.body.absence_id : "";
-        setCount(cell, sheetCount());
-        if (options.onChange) options.onChange(res.body, openDate, cell);
+        var request = box.checked
+          ? window.BunkrApi.post("/api/absences", payload)
+          : window.BunkrApi.del("/api/absences/" + box.dataset.absence);
 
-        window.BunkrToast.show(
-          box.checked
-            ? (whole ? "Planned to miss all of " + openDate
-                     : "Planned to miss one class on " + openDate)
-            : "Plan updated for " + openDate,
-          {
-            onUndo: function () {
-              box.checked = !box.checked;
-              box.dispatchEvent(new Event("change", { bubbles: true }));
-            }
+        return request.then(function (res) {
+          box.disabled = false;
+          if (!res.ok) {
+            box.checked = !box.checked;        // the server said no; show that
+            window.BunkrToast.error(res.body.error || "Couldn't save that.");
+            return;
           }
-        );
+
+          dirty = true;
+          box.dataset.absence = box.checked ? res.body.absence_id : "";
+          if (whole) {
+            applyWholeDay(box.checked ? res.body.absence_id : "");
+          } else {
+            box.dataset.ownAbsence = box.dataset.absence;
+            var row = box.closest(".lecture");
+            if (row) row.classList.toggle("is-planned", box.checked);
+          }
+          setCount(cell, sheetCount());
+          paintVerdict(res.body.day);
+          if (options.onChange) options.onChange(res.body, openDate, cell);
+
+          var undo = function () {
+            box.checked = !box.checked;
+            box.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+          var when = window.BunkrFmt.date(openDate);
+          if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
+            window.BunkrToast.show(
+              box.checked
+                ? (whole ? "Planned to miss all of " + when
+                         : "Planned to miss one class on " + when)
+                : "Plan updated for " + when,
+              { onUndo: undo }
+            );
+          }
+        });
       });
     });
 

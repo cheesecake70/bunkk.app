@@ -49,9 +49,9 @@ def report():
 class TestHeader:
     def test_identity(self, report):
         h = report.header
-        assert h.student_name == "MOKSSHA NANDU"
-        assert h.student_number == "60004250098"
-        assert h.roll_no == "C101"
+        assert h.student_name == "SOHAM NONDA"
+        assert h.student_number == "60000000001"
+        assert h.roll_no == "C000"
         assert h.academic_session == "2026-2027, Semester III"
         assert h.program == "B.Tech in Computer Engineering"
 
@@ -140,7 +140,6 @@ class TestWrongInputs:
 
     def test_random_pdf_rejected(self, tmp_path):
         # A structurally-valid but non-report PDF.
-        import pdfplumber  # ensure dependency present for the writer below
         from reportlab_stub import make_blank_pdf  # local helper
 
         blank = tmp_path / "blank.pdf"

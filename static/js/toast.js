@@ -27,7 +27,9 @@
     var onUndo = options.onUndo;
 
     var toast = document.createElement("div");
-    toast.className = "toast";
+    /* `tone: "danger"` for a save that landed but cost more than it had — it is
+       still a confirmation with an Undo, not an error, so it keeps its actions. */
+    toast.className = "toast" + (options.tone ? " toast--" + options.tone : "");
 
     var text = document.createElement("span");
     text.className = "toast__text";
@@ -62,12 +64,15 @@
       toast.appendChild(undo);
     }
 
-    var confirm = document.createElement("button");
-    confirm.type = "button";
-    confirm.className = "toast__action";
-    confirm.textContent = "Confirm";
-    confirm.addEventListener("click", close);
-    toast.appendChild(confirm);
+    /* "OK", not "Confirm": the change is already written by the time this is on
+       screen, and asking people to confirm what has happened made them think
+       the save was waiting on them. */
+    var dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "toast__action";
+    dismiss.textContent = "OK";
+    dismiss.addEventListener("click", close);
+    toast.appendChild(dismiss);
 
     ensureHost().appendChild(toast);
     timer = setTimeout(close, DISMISS_MS);

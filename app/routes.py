@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date, time, timedelta
+from datetime import date, timedelta
 
 from flask import (
     Blueprint,
@@ -14,11 +14,11 @@ from flask import (
     request,
     url_for,
 )
+from markupsafe import Markup
 from flask_login import current_user, login_required
 
-WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
 from . import db, planning
+from .filters import WEEKDAYS
 from .models import PlannedAbsence, Subject
 from .services import (
     UNKNOWN_STATUSES,
@@ -30,6 +30,7 @@ from .services import (
     predictions_for,
     settings_for,
     subject_limit,
+    subjects_for,
     vanished_lectures,
 )
 
@@ -41,15 +42,21 @@ def healthz():
     return jsonify(status="ok", app="bunkr")
 
 
-def _week_from(day: date) -> list[date]:
-    """The seven days Today's arrows can reach, starting with `day`.
+def _week_around(focus: date, today: date) -> list[date]:
+    """The seven days on the strip, sliding so `focus` is always one of them.
 
     Deliberately a rolling window rather than Monday-to-Sunday: on a Sunday a
     calendar week has no days left in it, and "can I skip tomorrow?" is exactly
-    the question someone asks on a Sunday evening. Past days carry no decision
-    anyway — the college has already recorded them.
+    the question someone asks on a Sunday evening.
+
+    It used to be pinned to today, which turned the seventh day into a wall —
+    the arrow greyed out with nothing to say about why, and the answer to "what
+    about the week after" was to go and find it on another page. Walking forward
+    now slides the window a day at a time. It still never shows the past: those
+    days carry no decision, the college has already recorded them.
     """
-    return [day + timedelta(days=i) for i in range(7)]
+    start = max(today, focus - timedelta(days=6))
+    return [start + timedelta(days=i) for i in range(7)]
 
 
 @bp.get("/")
@@ -66,7 +73,12 @@ def dashboard():
     ready, next_step = planning.advanced_ready(current_user)
     today = date.today()
 
-    week = _week_from(today)
+    # How far forward the arrows go. With a semester end you can walk to it;
+    # without one there is no projection to walk through, so the strip stays
+    # the week it always was.
+    end = planning.semester_end(current_user)
+    horizon = end or today + timedelta(days=6)
+
     focus = today
     raw = (request.args.get("date") or "").strip()
     if raw:
@@ -74,20 +86,41 @@ def dashboard():
             asked = date.fromisoformat(raw)
         except ValueError:
             asked = today
-        # Confined to the visible week on purpose: further out is a planning
-        # question, and /plan answers that across the whole horizon.
-        focus = asked if asked in week else today
+        # Clamped rather than discarded: a hand-typed date outside the term
+        # should land you at the nearest day that exists, not silently back on
+        # today as though the request were nonsense.
+        focus = min(max(asked, today), horizon)
+
+    week = _week_around(focus, today)
+    # Named rather than derived from the strip: walking forward puts `focus` at
+    # the right-hand edge, so "the next day" is off the end of the list.
+    prev_day = focus - timedelta(days=1) if focus > today else None
+    next_day = focus + timedelta(days=1) if focus < horizon else None
 
     wallet = day = None
     whole_day = None
     planned = {}
+    result = None
+    next_up = None
     if ready:
         wallet = planning.wallet_for(current_user)
         day = planning.day_plan_on(current_user, focus, wallet=wallet)
         # Without this the skip buttons render as "Skip this" on every load,
         # however many absences are already committed for the day.
         whole_day, planned = planning.absences_on(current_user, focus)
+        # What the plan already breaks. The commit guard warns about what a new
+        # absence would break *newly* — a limit you blew last week is not news,
+        # and a dialog that fires every time stops being read.
+        result = planning.simulate_for(current_user, [], wallet=wallet)
+        # A day with no classes answers "can I skip?" with nothing at all, and a
+        # Saturday shouldn't be a dead end. Point at the next day that has an
+        # answer instead.
+        if day is not None and not day.lectures:
+            next_up = _next_teaching_day(current_user, focus, horizon, wallet)
 
+    holiday = next(
+        (h for h in planning.holidays_for(current_user) if h.on_date == focus), None
+    )
     windows = planning.windows(current_user) if dash.subjects else None
     return render_template(
         "today.html",
@@ -103,8 +136,33 @@ def dashboard():
         windows=windows,
         whole_day=whole_day,
         planned=planned,
+        prev_day=prev_day,
+        next_day=next_day,
+        result=result,
+        holiday=holiday,
+        next_up=next_up,
+        # The report going stale is the single most common reason a number here
+        # looks wrong, so Today says so rather than leaving it to /plan.
+        coverage=coverage_for(current_user) if dash.subjects else None,
         subjects_by_id=(wallet.by_id() if wallet else {}),
     )
+
+
+def _next_teaching_day(user, focus: date, horizon: date, wallet):
+    """The next day with classes on it, within a week of `focus`.
+
+    Walks forward from the focused day rather than through the visible strip:
+    once the strip slides, `focus` sits at its right-hand edge and there is
+    nothing after it to look at.
+    """
+    for offset in range(1, 8):
+        day = focus + timedelta(days=offset)
+        if day > horizon:
+            return None
+        plan = planning.day_plan_on(user, day, wallet=wallet)
+        if plan is not None and plan.lectures:
+            return plan
+    return None
 
 
 @bp.get("/overview")
@@ -142,7 +200,7 @@ def subject_detail(subject_id: int):
         advanced_ready=advanced_ready,
         overall=dash.overall,
         lectures=lectures,
-        history=changes_for_lectures([l.id for l in lectures]),
+        history=changes_for_lectures(current_user, [l.id for l in lectures]),
         predictions=predictions,
         unknown_statuses=UNKNOWN_STATUSES,
         # What is left to decide, not the raw NU count — the guessed ones have
@@ -167,15 +225,13 @@ def timetable():
     ever describe what has already happened. Anything the reports haven't seen
     yet, and every break between classes, has to be addable by hand.
     """
-    subjects = (
-        db.session.query(Subject)
-        .filter_by(user_id=current_user.id)
-        .order_by(Subject.code)
-        .all()
-    )
+    subjects = subjects_for(current_user)
 
     if request.method == "POST":
-        entries = _parse_grid(request.form)
+        # Filtered to what would actually be stored *before* the guard: a grid
+        # whose every class named someone else's subject would otherwise pass
+        # here and then land empty.
+        entries = planning.storable_entries(current_user, _parse_grid(request.form))
         if not any(e.kind == "class" for e in entries):
             flash("Add at least one class — an empty timetable can't project anything.",
                   "error")
@@ -183,7 +239,15 @@ def timetable():
 
         planning.save_timetable(current_user, entries, source="manual")
         classes = sum(1 for e in entries if e.kind == "class")
-        flash(f"Timetable updated — {classes} classes a week.")
+        # A grid on its own projects nothing; without the end date this page
+        # looked finished and the verdicts stayed off with no explanation.
+        if planning.semester_end(current_user) is None:
+            flash(Markup(
+                f"Timetable updated — {classes} classes a week. One step left: "
+                f'<a href="{url_for("core.calendar")}">set your semester end date</a>.'
+            ))
+        else:
+            flash(f"Timetable updated — {classes} classes a week.")
         return redirect(url_for("core.timetable"))
 
     entries = planning.timetable_entries(current_user)
@@ -210,6 +274,7 @@ def timetable():
         subjects_by_id={s.id: s for s in subjects},
         weekdays=WEEKDAYS,
         inferred=inferred,
+        overlaps=planning.overlapping(entries),
     )
 
 
@@ -251,10 +316,14 @@ def calendar():
     months = _month_grid(today, end) if end else _month_grid(today, today + timedelta(days=60))
 
     # Absences per day, so the whole semester's commitments are visible at a
-    # glance rather than one dialog at a time.
-    absence_counts: dict[date, int] = {}
-    for row in db.session.query(PlannedAbsence).filter_by(user_id=current_user.id).all():
-        absence_counts[row.on_date] = absence_counts.get(row.on_date, 0) + 1
+    # glance rather than one dialog at a time. Counted in *lectures*, through
+    # the timetable — counting rows made a whole-day plan read as 1 against a
+    # seven-lecture day, disagreeing with the day sheet, the plan strip, and
+    # with itself the moment the sheet repainted the same badge.
+    absence_counts = planning.planned_count_by_date(
+        current_user,
+        db.session.query(PlannedAbsence).filter_by(user_id=current_user.id).all(),
+    )
 
     win = planning.windows(current_user)
     return render_template(
@@ -268,6 +337,9 @@ def calendar():
         today=today,
         weekdays=WEEKDAYS,
         has_timetable=planning.has_timetable(current_user),
+        # Seeds the commit guard, exactly as on Today and Plan.
+        result=(planning.simulate_for(current_user, [])
+                if planning.advanced_ready(current_user)[0] else None),
     )
 
 
@@ -364,6 +436,7 @@ def plan():
     guesses = predictions_for(current_user)
     true_worst = dashboard_for(current_user, use_predictions=False) if guesses else None
 
+    win = planning.windows(current_user) if dash.subjects else None
     shell = {
         "dash": dash,
         "has_data": bool(dash.subjects),
@@ -371,7 +444,7 @@ def plan():
         "true_worst": true_worst,
         "coverage": coverage_for(current_user),
         "vanished": vanished_lectures(current_user),
-        "windows": planning.windows(current_user) if dash.subjects else None,
+        "windows": win,
     }
 
     if not ready:
@@ -389,62 +462,76 @@ def plan():
         .order_by(PlannedAbsence.on_date)
         .all()
     )
-    subjects = {
-        s.id: s
-        for s in db.session.query(Subject).filter_by(user_id=current_user.id).all()
-    }
-    win = planning.windows(current_user)
+    subjects = {s.id: s for s in subjects_for(current_user)}
     strip = planning.horizon_strip(current_user, wallet=wallet)
     # The strip shows how much of each day is already spoken for; the day sheet
     # owns the detail, so all it needs here is a count.
     planned_counts = planning.planned_count_by_date(current_user, absences)
+
+    # A term is seventy-odd teaching days, and as a row of chips that was a wall
+    # of identical cells you had to scroll past to reach anything else. The same
+    # information reads at a glance as a month grid — and weekends only earn a
+    # column when the timetable actually uses them.
+    weekdays_shown = _weekdays_in_use(current_user)
     return render_template(
         "plan.html",
         ready=True,
         wallet=wallet,
         rows=_subject_rows(dash, wallet),
         strip=strip,
-        months=_group_by_month(strip),
+        plans={d.on_date: d for d in strip},
+        months=(_month_grid(strip[0].on_date, strip[-1].on_date, weekdays_shown)
+                if strip else []),
+        weekdays_shown=weekdays_shown,
         planned_counts=planned_counts,
         absences=absences,
         subjects=subjects,
-        result=planning.simulate_for(current_user, []),
-        **{**shell, "windows": win},
+        # The wallet above is the same one a fresh simulation would build.
+        result=planning.simulate_for(current_user, [], wallet=wallet),
+        **shell,
     )
 
 
-def _group_by_month(strip) -> list[dict]:
-    """A horizon can span months now, so the strip needs headings."""
-    months: list[dict] = []
-    for day in strip:
-        label = day.on_date.strftime("%B %Y")
-        if not months or months[-1]["label"] != label:
-            months.append({"label": label, "days": []})
-        months[-1]["days"].append(day)
-    return months
+def _weekdays_in_use(user) -> tuple[int, ...]:
+    """Mon–Fri unless the timetable puts something on a weekend."""
+    used = {s.weekday for s in planning.active_slots(user)}
+    return tuple(range(7)) if used - set(range(5)) else tuple(range(5))
 
 
-def _month_grid(start: date, end: date) -> list[dict]:
+def _month_grid(start: date, end: date,
+                weekdays: tuple[int, ...] = tuple(range(7))) -> list[dict]:
     """Whole months from `start`'s month to `end`'s, as week rows of dates.
 
     Days outside [start, end] are rendered as blanks — the calendar is
     future-only, so there is never a reason to tap a day that already happened.
+
+    `weekdays` narrows the columns: a Monday-to-Friday timetable has nothing to
+    say about Saturdays, and giving them a column each costs two sevenths of the
+    grid to say "no class" seventy times.
     """
     months = []
     cursor = date(start.year, start.month, 1)
     last = date(end.year, end.month, 1)
+    width = len(weekdays)
 
     while cursor <= last:
         _, days_in_month = monthrange(cursor.year, cursor.month)
-        first_weekday = cursor.weekday()
-        cells: list[date | None] = [None] * first_weekday
-        cells += [date(cursor.year, cursor.month, d) for d in range(1, days_in_month + 1)]
-        while len(cells) % 7:
-            cells.append(None)
+        days = [date(cursor.year, cursor.month, d)
+                for d in range(1, days_in_month + 1)
+                if date(cursor.year, cursor.month, d).weekday() in weekdays]
+
+        cells: list[date | None] = []
+        if days:
+            # Pad to the first shown day's column, so dates line up under their
+            # weekday heading rather than starting flush left.
+            cells += [None] * weekdays.index(days[0].weekday())
+            cells += days
+            while len(cells) % width:
+                cells.append(None)
 
         months.append({
             "label": cursor.strftime("%B %Y"),
-            "weeks": [cells[i:i + 7] for i in range(0, len(cells), 7)],
+            "weeks": [cells[i:i + width] for i in range(0, len(cells), width)],
         })
         cursor = date(cursor.year + (cursor.month == 12),
                       cursor.month % 12 + 1, 1)
@@ -455,12 +542,7 @@ def _month_grid(start: date, end: date) -> list[dict]:
 @login_required
 def settings():
     settings = settings_for(current_user)
-    subjects = (
-        db.session.query(Subject)
-        .filter_by(user_id=current_user.id)
-        .order_by(Subject.code)
-        .all()
-    )
+    subjects = subjects_for(current_user)
 
     def page(errors, status=200):
         return render_template(
@@ -518,12 +600,7 @@ def subjects():
     names to these rows, so calling something "DBMS" here can never stop a
     future report merging into it.
     """
-    rows = (
-        db.session.query(Subject)
-        .filter_by(user_id=current_user.id)
-        .order_by(Subject.code)
-        .all()
-    )
+    rows = subjects_for(current_user)
 
     def page(errors, status=200):
         return render_template(

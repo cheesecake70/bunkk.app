@@ -243,16 +243,69 @@ class TestDayVerdicts:
         assert plans[0].leave_after == time(10, 0)
         assert "Leave after 10:00" in plans[0].reason
 
-    def test_a_fully_committed_day_reads_as_skipped(self):
+    def test_a_fully_committed_day_reads_as_planned(self):
         """The wallet already paid for those lectures when they were committed;
-        asking it to pay again turned a settled day back into "part skip"."""
+        asking it to pay again turned a settled day back into "part skip".
+
+        PLANNED rather than SKIP, because "skip" is advice — and advice about a
+        decision already taken is at best noise, at worst a green light over an
+        over-spend."""
         w = self._wallet({"CN": 0}, 0)          # budget spent on this very day
         day = date(2026, 8, 17)
         plans = day_plans(
             {day: [lecture("CN", 1, 9, planned=True),
                    lecture("CN", 1, 10, planned=True)]}, w, [day])
+        assert plans[0].verdict is DayVerdict.PLANNED
+        assert plans[0].whole_day
+        assert plans[0].planned_count == 2
+        assert "Skipping the whole day" in plans[0].reason
+
+    def test_a_planned_day_that_breaks_a_limit_says_so(self):
+        """The commitment stands; what changes is that the day stops calling
+        itself safe. This is the walkthrough's headline bug: a whole day written
+        off against an empty budget still read green."""
+        rows = [subject_row(1, "CN", limit=70, present=0, absent=9,
+                            remaining=1, planned=1)]
+        w = build_wallet(rows, overall_limit=70)
+        day = date(2026, 8, 17)
+
+        plan = day_plans({day: [lecture("CN", 1, 9, planned=True)]}, w, [day])[0]
+        assert plan.verdict is DayVerdict.PLANNED
+        assert plan.over_budget
+        assert "Over budget: CN" in plan.reason
+
+    def test_partial_commit_with_nothing_left_to_cut_is_planned(self):
+        """Taking the app's own "leave after 10:00" advice used to flip the day
+        to MUST GO, which reads as the advice being withdrawn."""
+        w = self._wallet({"CN": 0}, 0)
+        day = date(2026, 8, 17)
+        plans = day_plans(
+            {day: [lecture("CN", 1, 9), lecture("CN", 1, 10, planned=True)]},
+            w, [day])
+        assert plans[0].verdict is DayVerdict.PLANNED
+        assert plans[0].planned_count == 1
+        assert plans[0].leave_after == time(10, 0)
+        assert "must-attend" in plans[0].reason
+
+    def test_a_planned_morning_reads_as_arriving_late(self):
+        w = self._wallet({"CN": 0}, 0)
+        day = date(2026, 8, 17)
+        plans = day_plans(
+            {day: [lecture("CN", 1, 9, planned=True), lecture("CN", 1, 10)]},
+            w, [day])
+        assert plans[0].verdict is DayVerdict.PLANNED
+        assert plans[0].arrive_at == time(10, 0)
+        assert "Arriving by 10:00" in plans[0].reason
+
+    def test_partial_commit_with_room_left_keeps_advising(self):
+        """A commitment doesn't silence the day while budget remains."""
+        w = self._wallet({"CN": 1}, 1)
+        day = date(2026, 8, 17)
+        plans = day_plans(
+            {day: [lecture("CN", 1, 9, planned=True), lecture("CN", 1, 10)]},
+            w, [day])
         assert plans[0].verdict is DayVerdict.SKIP
-        assert "Already planning to miss" in plans[0].reason
+        assert plans[0].planned_count == 1
 
     def test_committed_lectures_are_not_charged_for_twice(self):
         """One of two lectures is already committed; one lecture of budget is
@@ -345,18 +398,33 @@ class TestDayVerdicts:
         budget=st.integers(0, 6),
         overall=st.integers(0, 6),
         lecture_count=st.integers(1, 5),
+        committed=st.lists(st.booleans(), min_size=5, max_size=5),
     )
-    def test_a_skip_verdict_never_breaks_a_limit(self, budget, overall, lecture_count):
-        """The product's one unforgivable failure, asserted directly."""
+    def test_a_skip_verdict_never_breaks_a_limit(self, budget, overall,
+                                                 lecture_count, committed):
+        """The product's one unforgivable failure, asserted directly.
+
+        Commitments are in the strategy because they are how the failure came
+        back: a day whose lectures were all committed returned SKIP no matter
+        what the budget said. SKIP now only ever describes lectures still
+        undecided, and it has to fit them."""
         w = self._wallet({"CN": budget}, overall)
         effective = w.subjects[0].budget
         day = date(2026, 8, 17)
-        lectures = [lecture("CN", 1, 9 + i) for i in range(lecture_count)]
+        lectures = [lecture("CN", 1, 9 + i, planned=committed[i])
+                    for i in range(lecture_count)]
         plan = day_plans({day: lectures}, w, [day])[0]
+        pending = [l for l in lectures if not l.planned]
+
+        # A day with nothing left to decide is never advice.
+        assert not (plan.verdict is DayVerdict.SKIP and not pending)
 
         if plan.verdict is DayVerdict.SKIP:
-            assert lecture_count <= effective
-            assert lecture_count <= w.overall_budget
+            assert len(pending) <= effective
+            assert len(pending) <= w.overall_budget
+        if plan.verdict is DayVerdict.PLANNED:
+            assert any(l.planned for l in lectures)
+        assert plan.planned_count == sum(1 for l in lectures if l.planned)
 
 
 class TestSimulator:

@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 
 from flask import current_app
+from sqlalchemy.exc import IntegrityError
 
 from report_parser import Lecture, LectureStatus, ParsedReport, parse_pdf
 
@@ -46,6 +47,34 @@ SIMILARITY_ASK = 0.85
 
 class MergeError(Exception):
     """User-facing ingestion failure."""
+
+
+class IdentityClaimed(MergeError):
+    """The report's student number already backs a different account.
+
+    Carries who holds it, because "some other account has this" is a dead end:
+    the person hitting it is nearly always themselves, signed into the wrong
+    one of their two accounts, and the only thing they need is to be told which.
+
+    The email is masked to its first letter and domain. That is enough to tell
+    your Gmail account from your Outlook one, and stops a report that fell into
+    someone else's hands from also handing over a full contact address.
+    """
+
+    def __init__(self, message: str, *, username: str, email: str,
+                 student_number: str):
+        super().__init__(message)
+        self.username = username
+        self.email_hint = mask_email(email)
+        self.student_number = student_number
+
+
+def mask_email(email: str) -> str:
+    """nandu@gmail.com -> n••••@gmail.com"""
+    name, at, domain = (email or "").partition("@")
+    if not at or not name:
+        return "•••"
+    return name[0] + "•" * max(3, len(name) - 1) + "@" + domain
 
 
 # --------------------------------------------------------------------------
@@ -138,11 +167,47 @@ def ingest_report(
 ) -> MergeResult:
     """Merge an already-parsed report. Split out of `ingest` so merge scenarios
     can be exercised without hand-crafting a PDF for every case."""
+    try:
+        return _ingest_report(user, report, digest=digest, data=data,
+                              filename=filename)
+    except IntegrityError:
+        # Two accounts uploading the same student's report at the same moment
+        # both passed `_check_identity`; the unique index caught the second.
+        # Answer it the way the check would have, rather than with a 500.
+        db.session.rollback()
+        claimed = (
+            db.session.query(User)
+            .filter(User.student_number == report.header.student_number,
+                    User.id != user.id)
+            .first()
+        )
+        if claimed is None:
+            raise MergeError("That upload clashed with another; try again.")
+        raise IdentityClaimed(
+            f"Student {report.header.student_number} is already set up on "
+            "another Bunkr account. If that's you, sign in as that account "
+            "instead of uploading the report here.",
+            username=claimed.username, email=claimed.email,
+            student_number=report.header.student_number,
+        )
+
+
+def _ingest_report(user, report, *, digest, data, filename) -> MergeResult:
     _check_identity(user, report)
+
+    # Everything that can be read before the first write, is: SQLite has one
+    # writer at a time, and the lock is held from the first INSERT to the
+    # commit, so every read done inside that window is a read every other
+    # upload waits for.
+    from .services import subject_worst_percentages   # local: avoids a cycle
+    before = subject_worst_percentages(user)
+
+    semester = _get_or_create_semester(user, report.header.academic_session)
 
     path = _store_pdf(user, data, digest, filename) if data is not None else "(unsaved)"
     snapshot = ReportSnapshot(
         user_id=user.id,
+        semester_id=semester.id,
         period_start=report.header.period_start,
         period_end=report.header.period_end,
         file_path=path,
@@ -154,8 +219,6 @@ def ingest_report(
     )
     db.session.add(snapshot)
     db.session.flush()
-
-    semester = _get_or_create_semester(user, report.header.academic_session)
 
     mapping, proposals, created = _resolve_subjects(user, semester, report)
     if proposals:
@@ -169,7 +232,7 @@ def ingest_report(
             proposals=proposals,
         )
 
-    result = _apply(user, snapshot, report, mapping)
+    result = _apply(user, snapshot, report, mapping, before=before)
     result.new_subjects = created
     db.session.commit()
     return result
@@ -241,10 +304,13 @@ def _check_identity(user: User, report: ParsedReport) -> None:
             .first()
         )
         if claimed is not None:
-            raise MergeError(
+            raise IdentityClaimed(
                 f"Student {header.student_number} is already set up on another "
                 "Bunkr account. If that's you, sign in as that account "
-                "instead of uploading the report here."
+                "instead of uploading the report here.",
+                username=claimed.username,
+                email=claimed.email,
+                student_number=header.student_number,
             )
 
         # First upload claims the identity printed on the report.
@@ -269,9 +335,18 @@ def _get_or_create_semester(user: User, session_label: str) -> Semester:
         .one_or_none()
     )
     if semester is None:
-        semester = Semester(user_id=user.id, session_label=session_label)
+        # A new term's first report retires the old term: everything on screen
+        # is scoped to the active semester, and there is exactly one of those.
+        db.session.query(Semester).filter_by(user_id=user.id).update(
+            {"is_active": False}, synchronize_session=False
+        )
+        semester = Semester(user_id=user.id, session_label=session_label,
+                            is_active=True)
         db.session.add(semester)
         db.session.flush()
+        from .cache import drop                     # local: avoids a cycle
+        from .services import active_semester
+        drop(active_semester)
     return semester
 
 
@@ -410,11 +485,17 @@ def _apply(
     snapshot: ReportSnapshot,
     report: ParsedReport,
     mapping: dict[str, Subject],
+    before: dict[str, float | None] | None = None,
 ) -> MergeResult:
-    """The upsert itself. Assumes every raw name in `report` is in `mapping`."""
+    """The upsert itself. Assumes every raw name in `report` is in `mapping`.
+
+    `before` is the pre-merge worst-case per subject, read by the caller before
+    it took the write lock; computed here only for callers that didn't.
+    """
     from .services import subject_worst_percentages   # local: avoids a cycle
 
-    before = subject_worst_percentages(user)
+    if before is None:
+        before = subject_worst_percentages(user)
 
     existing = {
         (l.subject_id, l.on_date, l.start_time): l
@@ -496,6 +577,12 @@ def _apply(
     snapshot.status = "merged"
     db.session.flush()
 
+    # The ledger these percentages come from has just changed underneath the
+    # request-scoped caches; without this, `after` is handed `before` again and
+    # every move reports as zero.
+    from .planning import forget_derived            # local: avoids a cycle
+
+    forget_derived()
     after = subject_worst_percentages(user)
     result.pct_moves = {
         code: (before.get(code), after_pct)

@@ -1,0 +1,16 @@
+{# "Your last report is N days old."
+
+   Shared by Today and the Plan page's attention stack. A stale report is the
+   most common reason a number on screen looks wrong — everything since it is
+   counted as missed — so it belongs on the page people actually open, not only
+   on the one they visit when something already looks off. #}
+<div class="banner banner--info" style="margin-bottom:var(--sp-5)">
+  <div class="banner__body">
+    <div class="banner__title">{{ coverage.stale_days }} days since your last report</div>
+    <div class="banner__text">
+      Anything after <span class="range">{{ coverage.latest_covered|short_date }}</span>
+      isn't counted yet. Export <span class="range">{{ coverage.suggested_export }}</span> to catch up.
+    </div>
+  </div>
+  <a class="btn btn--sm" href="{{ url_for('core.upload') }}">Upload</a>
+</div>

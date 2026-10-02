@@ -10,7 +10,7 @@ import os
 import shutil
 
 from flask import Blueprint, current_app, flash, redirect, request, url_for
-from flask_login import current_user, login_required, logout_user
+from flask_login import current_user, login_required, login_user, logout_user
 
 from . import db
 from .auth import normalise_username, validate_username
@@ -58,13 +58,32 @@ def update_profile():
     return redirect(url_for("core.settings"))
 
 
+@bp.post("/sessions/revoke")
+@login_required
+def sign_out_everywhere():
+    """Sign every *other* device out.
+
+    Rotating the session token is the whole point: someone who signed in on
+    a shared laptop means "stop being me over there", and only a new token
+    can say that. This browser is re-issued a cookie immediately, so the
+    person doing it stays where they are.
+    """
+    current_user.rotate_session()
+    db.session.commit()
+    login_user(current_user, remember=True)
+    flash("Every other device has been signed out.")
+    return redirect(url_for("core.settings"))
+
+
 @bp.post("/delete")
 @login_required
 def delete():
-    """Erase the account. Password-confirmed, and it takes the PDFs too."""
-    password = request.form.get("password") or ""
-    if not current_user.check_password(password):
-        flash("That password doesn't match — nothing was deleted.", "error")
+    """Erase the account. Confirmed by typing the username, and it takes the
+    PDFs too. There is no password to ask for; the username is the one thing
+    on the page a stray click can't supply."""
+    typed = (request.form.get("confirm") or "").strip()
+    if typed.lower() != (current_user.username or "").lower():
+        flash("Type your username exactly to confirm — nothing was deleted.", "error")
         return redirect(url_for("core.settings"))
 
     user_id = current_user.id

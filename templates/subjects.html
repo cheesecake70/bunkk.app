@@ -22,6 +22,7 @@
   </div>
 {% else %}
 <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="stack">
     {% for subject in subjects %}
       {# Six rotating tints so a long list reads as a list of distinct things

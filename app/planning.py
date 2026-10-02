@@ -31,19 +31,46 @@ from attendance_engine import (
 )
 
 from . import db
+from .cache import drop, per_request
 from .models import (
     Checkpoint,
     Holiday,
-    LectureInstance,
     PlannedAbsence,
     Subject,
     TimetableSlot,
     TimetableVersion,
 )
-from .services import active_semester, counts_by_subject, coverage_for, settings_for, subject_limit
+from .services import (
+    _coverage_for,
+    _ledger_query,
+    active_semester,
+    counts_by_subject,
+    coverage_for,
+    predictions_for,
+    settings_for,
+    subject_limit,
+    subjects_for,
+)
 
 #: How many days the GO/SKIP strip looks ahead.
 STRIP_DAYS = 14
+
+
+def forget_derived() -> None:
+    """Drop every per-request memo derived from stored data.
+
+    For the one shape the memos cannot survive: a request that writes and then
+    reads the same thing. A report merge does exactly that — it quotes each
+    subject's percentage before ingesting and again after, so that it can tell
+    you what moved — and a memo held across the write would answer both with
+    the same number and report that nothing changed.
+
+    Lives here rather than in `services` because it covers both layers, and
+    `planning` is the one that already sees both.
+    """
+    drop(counts_by_subject, predictions_for, _coverage_for, active_semester,
+         _windows, subject_codes, active_version, timetable_entries,
+         holidays_for, calendar_rules)
 
 
 @dataclass(frozen=True)
@@ -83,13 +110,12 @@ class Windows:
 def inferred_candidates(user) -> list[SlotCandidate]:
     rows = [
         LectureRow(l.subject_id, l.on_date, l.start_time, l.end_time)
-        for l in db.session.query(LectureInstance)
-        .filter_by(user_id=user.id, is_vanished=False)
-        .all()
+        for l in _ledger_query(user).all()
     ]
     return infer_slots(rows)
 
 
+@per_request
 def active_version(user) -> TimetableVersion | None:
     semester = active_semester(user)
     if semester is None:
@@ -151,6 +177,7 @@ def _breaks_over(user, days: list[date]) -> dict[date, list[BreakSpan]]:
     return out
 
 
+@per_request
 def timetable_entries(user) -> list[TimetableSlot]:
     """Everything in the current grid, breaks included — for rendering it."""
     version = active_version(user)
@@ -223,6 +250,28 @@ def _as_time(value) -> time:
     return time.fromisoformat(str(value))
 
 
+def overlapping(entries: list[Entry]) -> set[tuple[int, time, time]]:
+    """Class blocks that share time with another class on the same weekday.
+
+    Colleges really do run two courses in one slot for different halves of a
+    division, and the reports show both — so this is a fact to label, not an
+    error to reject. Unlabelled, the grid just looks like it drew a block twice.
+
+    Keyed by (weekday, start, end) rather than by identity so the template and
+    the editor can both ask "is this block one of them?".
+    """
+    classes = [e for e in entries if e.kind == "class"]
+    clashing: set[tuple[int, time, time]] = set()
+    for i, a in enumerate(classes):
+        for b in classes[i + 1:]:
+            if a.weekday != b.weekday:
+                continue
+            if a.start_time < b.end_time and b.start_time < a.end_time:
+                clashing.add((a.weekday, a.start_time, a.end_time))
+                clashing.add((b.weekday, b.start_time, b.end_time))
+    return clashing
+
+
 #: A gap has to be long enough to be a break rather than a walk between rooms,
 #: and short enough that it isn't simply the end of the day.
 MIN_GAP_MINUTES = 15
@@ -278,6 +327,36 @@ def _gap_label(start: time, end: time, minutes: int) -> str | None:
     return "Lunch" if minutes >= 45 and midday else None
 
 
+def storable_entries(user, entries: list[Entry | Slot]) -> list[Entry]:
+    """The blocks of `entries` that would actually survive a save.
+
+    Callers run this *before* deciding whether a grid is worth saving, so the
+    "at least one class" guard and the count they report back describe what the
+    database will hold rather than what the request asked for. Doing the
+    ownership check only inside `save_timetable` let a grid whose every class
+    named someone else's subject pass validation and then land empty, wiping
+    the timetable while the response said it had saved a class.
+
+    Accepts engine `Slot`s as well as `Entry`s, because inference still speaks
+    in Slots and there is no reason to make callers convert.
+    """
+    # This term's subjects only: a block naming last term's course would be
+    # stored, never projected, and show as a class the wallet can't see.
+    owned = {s.id for s in subjects_for(user)}
+    kept: list[Entry] = []
+    for entry in entries:
+        if isinstance(entry, Slot):
+            entry = Entry(entry.weekday, entry.start_time, entry.end_time,
+                          kind="class", subject_id=entry.subject_id)
+        if not entry.is_valid:
+            continue
+        # Never trust ids from a form: an unowned subject is dropped, not saved.
+        if entry.kind == "class" and entry.subject_id not in owned:
+            continue
+        kept.append(entry)
+    return kept
+
+
 def save_timetable(user, entries: list[Entry | Slot], *, source: str = "inferred",
                    valid_from: date | None = None,
                    replace: bool = True) -> TimetableVersion:
@@ -288,13 +367,19 @@ def save_timetable(user, entries: list[Entry | Slot], *, source: str = "inferred
     button at the bottom, and a version per keystroke-session would bury that
     history in noise — so `replace` rewrites today's own manual version in
     place and only starts a new one when the day, or the source, changes.
-
-    Accepts engine `Slot`s as well as `Entry`s, because inference still speaks
-    in Slots and there is no reason to make callers convert.
     """
     semester = active_semester(user)
     if semester is None:
         raise ValueError("No semester yet — upload a report first.")
+
+    storable = storable_entries(user, entries)
+    # The last line of defence, after every caller's own check: `replace` blanks
+    # the current version before writing, so a save with nothing to write would
+    # switch planning off rather than leave the grid alone.
+    if not any(e.kind == "class" for e in storable):
+        raise ValueError(
+            "Add at least one class — an empty timetable can't project anything."
+        )
 
     effective = valid_from or date.today()
     version = None
@@ -314,16 +399,7 @@ def save_timetable(user, entries: list[Entry | Slot], *, source: str = "inferred
         db.session.add(version)
     db.session.flush()
 
-    owned = {s.id for s in db.session.query(Subject).filter_by(user_id=user.id).all()}
-    for entry in entries:
-        if isinstance(entry, Slot):
-            entry = Entry(entry.weekday, entry.start_time, entry.end_time,
-                          kind="class", subject_id=entry.subject_id)
-        if not entry.is_valid:
-            continue
-        # Never trust ids from a form: an unowned subject is dropped, not saved.
-        if entry.kind == "class" and entry.subject_id not in owned:
-            continue
+    for entry in storable:
         db.session.add(
             TimetableSlot(
                 version_id=version.id,
@@ -336,6 +412,9 @@ def save_timetable(user, entries: list[Entry | Slot], *, source: str = "inferred
             )
         )
     db.session.commit()
+    # The grid these read was just rewritten. Dropped explicitly rather than
+    # relying on nothing re-reading it later in the same request.
+    drop(active_version, timetable_entries)
     return version
 
 
@@ -343,11 +422,21 @@ def has_timetable(user) -> bool:
     return bool(active_slots(user))
 
 
+@per_request
+def subject_codes(user) -> dict[int, str]:
+    """subject_id -> short code, for labelling projected lectures."""
+    return {
+        row.id: row.code
+        for row in db.session.query(Subject.id, Subject.code).filter_by(user_id=user.id)
+    }
+
+
 # ---------------------------------------------------------------------------
 # Calendar
 # ---------------------------------------------------------------------------
 
 
+@per_request
 def holidays_for(user) -> list[Holiday]:
     semester = active_semester(user)
     if semester is None:
@@ -360,6 +449,7 @@ def holidays_for(user) -> list[Holiday]:
     )
 
 
+@per_request
 def calendar_rules(user) -> CalendarRules:
     return CalendarRules(
         holidays=frozenset(row.on_date for row in holidays_for(user))
@@ -380,13 +470,57 @@ def set_day(user, on_date: date, kind: str | None, *, name: str | None = None) -
         if existing is not None:
             db.session.delete(existing)
         db.session.commit()
+        drop(holidays_for, calendar_rules, _windows)
         return
 
     if existing is None:
         existing = Holiday(semester_id=semester.id, on_date=on_date)
         db.session.add(existing)
-    existing.name = name
+    # Trimmed to the column's width here rather than trusted from the caller:
+    # SQLite does not enforce String(120), so an unbounded name would be stored
+    # in full and only fail on a database that does.
+    existing.name = (name or "").strip()[:120] or None
     db.session.commit()
+    drop(holidays_for, calendar_rules, _windows)
+
+
+def set_days(user, frm: date, to: date, kind: str | None,
+             *, name: str | None = None) -> list[date]:
+    """The same as `set_day`, over a range. Returns the dates it touched.
+
+    A mid-semester break is five to ten days, and marking them one tap at a time
+    is the sort of chore that gets abandoned halfway — leaving a calendar that is
+    wrong in a way nothing on screen reveals. One transaction, one cache drop.
+    """
+    semester = active_semester(user)
+    if semester is None or frm > to:
+        return []
+
+    existing = {
+        row.on_date: row
+        for row in db.session.query(Holiday)
+        .filter(Holiday.semester_id == semester.id)
+        .filter(Holiday.on_date >= frm, Holiday.on_date <= to)
+        .all()
+    }
+
+    touched: list[date] = []
+    trimmed = (name or "").strip()[:120] or None
+    for offset in range((to - frm).days + 1):
+        day = frm + timedelta(days=offset)
+        row = existing.get(day)
+        if kind is None:
+            if row is not None:
+                db.session.delete(row)
+        elif row is None:
+            db.session.add(Holiday(semester_id=semester.id, on_date=day, name=trimmed))
+        else:
+            row.name = trimmed
+        touched.append(day)
+
+    db.session.commit()
+    drop(holidays_for, calendar_rules, _windows)
+    return touched
 
 
 def semester_end(user) -> date | None:
@@ -446,6 +580,7 @@ def set_semester_end(user, end: date) -> None:
     if semester is not None:
         semester.end_date = end
         db.session.commit()
+        drop(_windows)
 
 
 def add_checkpoint(user, on_date: date, label: str | None = None,
@@ -469,6 +604,7 @@ def add_checkpoint(user, on_date: date, label: str | None = None,
     db.session.add(Checkpoint(semester_id=semester.id, on_date=on_date,
                               label=(label or None)))
     db.session.commit()
+    drop(_windows)
     return None
 
 
@@ -485,6 +621,7 @@ def remove_checkpoint(user, checkpoint_id: int) -> bool:
         return False
     db.session.delete(row)
     db.session.commit()
+    drop(_windows)
     return True
 
 
@@ -499,8 +636,15 @@ def windows(user, today: date | None = None) -> Windows:
     Today counts as *remaining* — you can still choose to go — unless a report
     already covers today, in which case those lectures are in the ledger and
     projecting them again would count them twice.
+
+    `today` is resolved here, before the memo, so the wallet (which passes it)
+    and the page shell (which doesn't) share one cached answer.
     """
-    today = today or date.today()
+    return _windows(user, today or date.today())
+
+
+@per_request
+def _windows(user, today: date) -> Windows:
     latest = coverage_for(user, today=today).latest_covered
 
     if latest is None:
@@ -557,9 +701,21 @@ def _absence_hits(on_date: date, subject_id: int | None, start_time,
     return [o for o in hits if same_minute(o.slot.start_time, start_time)]
 
 
-def _planned_absence_counts(user, slots: list[Slot], rules: CalendarRules,
-                            frm: date, to: date | None) -> dict[int, int]:
-    """Planned absences per subject, resolved through the timetable."""
+def _planned_hits_in(user, slots: list[Slot], rules: CalendarRules,
+                     frm: date, to: date | None,
+                     extra_absences: list[tuple] | None = None) -> dict[date, set]:
+    """Every lecture the plan writes off inside a window, deduplicated.
+
+    Keyed by the lecture rather than by the row that claimed it, because the
+    tiers overlap by design: a whole-day row and a single-class row on the same
+    day both cover that class, and today.js keeps the finer row alive under the
+    coarser one so undoing the day restores what was underneath. Counting rows
+    would charge that class twice and quietly shrink the budget.
+
+    Hypothetical absences are merged into the same set for the same reason —
+    simulating a lecture you have already committed to missing costs nothing
+    extra, because it was already spent.
+    """
     if to is None or frm > to:
         return {}
     rows = (
@@ -568,11 +724,27 @@ def _planned_absence_counts(user, slots: list[Slot], rules: CalendarRules,
         .filter(PlannedAbsence.on_date >= frm, PlannedAbsence.on_date <= to)
         .all()
     )
+    hits = _planned_lecture_hits(user, rows, slots=slots, rules=rules)
+
+    for extra in (extra_absences or []):
+        # Tuples may be (date, subject) or (date, subject, start_time).
+        on_date, subject_id = extra[0], extra[1]
+        start_time = extra[2] if len(extra) > 2 else None
+        if not frm <= on_date <= to:
+            continue
+        for occ in _absence_hits(on_date, subject_id, start_time, slots, rules):
+            hits.setdefault(on_date, set()).add(
+                (occ.slot.subject_id, occ.slot.start_time)
+            )
+    return hits
+
+
+def _counts_from_hits(hits: dict[date, set]) -> dict[int, int]:
+    """Deduplicated lecture hits, tallied per subject."""
     tally: dict[int, int] = {}
-    for row in rows:
-        for occ in _absence_hits(row.on_date, row.subject_id, row.start_time,
-                                 slots, rules):
-            tally[occ.slot.subject_id] = tally.get(occ.slot.subject_id, 0) + 1
+    for lectures in hits.values():
+        for subject_id, _start in lectures:
+            tally[subject_id] = tally.get(subject_id, 0) + 1
     return tally
 
 
@@ -598,25 +770,12 @@ def wallet_rows(user, today: date | None = None,
         count_by_subject(expand(slots, win.remaining_from, win.remaining_to, rules))
         if win.remaining_to else {}
     )
-    planned = _planned_absence_counts(user, slots, rules,
-                                      win.remaining_from, win.remaining_to)
-
-    for extra in (extra_absences or []):
-        # Tuples may be (date, subject) or (date, subject, start_time).
-        on_date, subject_id = extra[0], extra[1]
-        start_time = extra[2] if len(extra) > 2 else None
-        if not (win.remaining_from <= on_date <= (win.remaining_to or on_date)):
-            continue
-        for occ in _absence_hits(on_date, subject_id, start_time, slots, rules):
-            planned[occ.slot.subject_id] = planned.get(occ.slot.subject_id, 0) + 1
+    planned = _counts_from_hits(_planned_hits_in(
+        user, slots, rules, win.remaining_from, win.remaining_to, extra_absences
+    ))
 
     counts = counts_by_subject(user)
-    subjects = (
-        db.session.query(Subject)
-        .filter_by(user_id=user.id, active=True)
-        .order_by(Subject.code)
-        .all()
-    )
+    subjects = subjects_for(user, active_only=True)
     from attendance_engine import Counts
 
     rows = [
@@ -629,8 +788,11 @@ def wallet_rows(user, today: date | None = None,
             "counts": counts.get(s.id, Counts()),
             "unreported": unreported.get(s.id, 0),
             "remaining": remaining.get(s.id, 0),
-            # Never plan to miss more than actually remain.
-            "planned_absences": min(planned.get(s.id, 0), remaining.get(s.id, 0)),
+            # No clamp against `remaining` any more, and none is needed: every
+            # hit is one occurrence drawn from the same expansion `remaining`
+            # counts, and the hits are a set. A clamp here would only be able to
+            # hide a counting bug, which is exactly what it used to do.
+            "planned_absences": planned.get(s.id, 0),
         }
         for s in subjects
     ]
@@ -723,17 +885,22 @@ def planned_count_by_date(user, rows) -> dict[date, int]:
             for day, lectures in _planned_lecture_hits(user, rows).items()}
 
 
-def _planned_lecture_hits(user, rows) -> dict[date, set]:
+def _planned_lecture_hits(user, rows, *, slots: list[Slot] | None = None,
+                          rules: CalendarRules | None = None) -> dict[date, set]:
     """Which real lectures the given absence rows cover, as
     ``date -> {(subject_id, start_time)}``.
 
     Keyed by the lecture itself: a whole-day row and a single-class row on the
     same day overlap, and counting both would claim more missed lectures than
     the day even holds.
+
+    `slots` and `rules` are accepted so a caller already holding them doesn't
+    pay for the grid twice; they are read here only when omitted.
     """
     if not rows:
         return {}
-    slots, rules = active_slots(user), calendar_rules(user)
+    slots = active_slots(user) if slots is None else slots
+    rules = calendar_rules(user) if rules is None else rules
     hit_lectures: dict[date, set] = {}
     for row in rows:
         for occurrence in _absence_hits(
@@ -775,9 +942,17 @@ def absences_on(user, on_date: date) -> tuple[PlannedAbsence | None, dict]:
     return whole_day, per_lecture
 
 
-def simulate_for(user, extra_absences, today: date | None = None):
-    """Same inputs as `wallet_for`, but reports what the plan would break."""
-    wallet = wallet_for(user, today=today, extra_absences=extra_absences)
+def simulate_for(user, extra_absences, today: date | None = None,
+                 wallet: Wallet | None = None):
+    """Same inputs as `wallet_for`, but reports what the plan would break.
+
+    Pass `wallet` when you already built one for the same inputs — /plan renders
+    both, and rebuilding it meant a second pass over the whole ledger for an
+    answer that could not differ. Only valid when `extra_absences` is empty,
+    since a hypothetical changes the wallet it is asking about.
+    """
+    if wallet is None or extra_absences:
+        wallet = wallet_for(user, today=today, extra_absences=extra_absences)
     rows = [
         {
             "id": s.subject_id, "code": s.code, "canonical_name": s.canonical_name,
@@ -816,7 +991,8 @@ def _to_planned(occurrences: list[Occurrence], codes: dict[int, str],
     return days
 
 
-def _committed_between(user, frm: date, to: date) -> dict[date, set]:
+def _committed_between(user, frm: date, to: date, *, slots=None,
+                       rules=None) -> dict[date, set]:
     """Lectures already committed as missed, between two dates inclusive."""
     rows = (
         db.session.query(PlannedAbsence)
@@ -824,7 +1000,7 @@ def _committed_between(user, frm: date, to: date) -> dict[date, set]:
         .filter(PlannedAbsence.on_date >= frm, PlannedAbsence.on_date <= to)
         .all()
     )
-    return _planned_lecture_hits(user, rows)
+    return _planned_lecture_hits(user, rows, slots=slots, rules=rules)
 
 
 def day_strip(user, today: date | None = None, days: int = STRIP_DAYS,
@@ -843,14 +1019,13 @@ def day_strip(user, today: date | None = None, days: int = STRIP_DAYS,
     if start > end:
         return []
 
-    codes = {
-        s.id: s.code
-        for s in db.session.query(Subject).filter_by(user_id=user.id).all()
-    }
-    occurrences = expand(slots, start, end, calendar_rules(user))
+    rules = calendar_rules(user)
+    codes = subject_codes(user)
+    occurrences = expand(slots, start, end, rules)
     horizon = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    committed = _committed_between(user, start, end, slots=slots, rules=rules)
     return day_plans(
-        _to_planned(occurrences, codes, _committed_between(user, start, end)),
+        _to_planned(occurrences, codes, committed),
         wallet, horizon, _breaks_over(user, horizon),
     )
 
@@ -871,25 +1046,23 @@ def horizon_strip(user, today: date | None = None,
 
 
 def day_plan_on(user, on_date: date, wallet: Wallet | None = None) -> DayPlan | None:
-    """One specific day's plan, for any date in the semester.
+    """One specific day's plan, for any date the timetable reaches.
 
-    `day_strip` only looks forward from the projection window; Today's arrows
-    walk the whole current week, including days already behind you. Those days
-    still have a timetable, so they still have lectures worth listing — they
-    just no longer have a decision attached.
+    `day_strip` starts at `remaining_from`, which sits *after* today whenever a
+    report already covers today — so today itself can fall outside the strip
+    while still being the day someone is asking about. This answers for a
+    single date regardless of where the projection window begins.
     """
     slots = active_slots(user)
     if not slots:
         return None
 
     wallet = wallet or wallet_for(user)
-    codes = {
-        s.id: s.code
-        for s in db.session.query(Subject).filter_by(user_id=user.id).all()
-    }
-    occurrences = expand(slots, on_date, on_date, calendar_rules(user))
+    rules = calendar_rules(user)
+    occurrences = expand(slots, on_date, on_date, rules)
+    committed = _committed_between(user, on_date, on_date, slots=slots, rules=rules)
     plans = day_plans(
-        _to_planned(occurrences, codes, _committed_between(user, on_date, on_date)),
+        _to_planned(occurrences, subject_codes(user), committed),
         wallet, [on_date], _breaks_over(user, [on_date]),
     )
     return plans[0] if plans else None

@@ -13,11 +13,12 @@
   <div class="card">
     <h3>Profile</h3>
     <form method="post" action="{{ url_for('account.update_profile') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="username">Username</label>
         <input class="input" id="username" name="username"
                value="{{ current_user.username }}" required>
-        <div class="field__hint">Letters, numbers, dots or underscores. You can sign in with this or your email.</div>
+        <div class="field__hint">Letters, numbers, dots or underscores. How you're known in Bunkr; you sign in with Google.</div>
       </div>
       <div class="row" style="margin-bottom:var(--sp-4)">
         <span class="badge badge--neutral">{{ current_user.email }}</span>
@@ -32,8 +33,22 @@
     </form>
   </div>
 
+  {# ---- Sessions ------------------------------------------------------ #}
+  <div class="card">
+    <h3>Signed-in devices</h3>
+    <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
+      You sign in with Google, so there's no password to change. If you used a
+      shared laptop, sign every other device out. This one stays put.
+    </p>
+    <form method="post" action="{{ url_for('account.sign_out_everywhere') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn--primary" type="submit">Sign out other devices</button>
+    </form>
+  </div>
+
   {# ---- Limits -------------------------------------------------------- #}
   <form method="post" class="stack--lg">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="card">
       <h3>Attendance limits</h3>
       <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
@@ -105,9 +120,11 @@
       undone, and Bunkr keeps no backup of your account once it's gone.
     </p>
     <form method="post" action="{{ url_for('account.delete') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field" style="max-width:320px">
-        <label for="password">Confirm with your password</label>
-        <input class="input" id="password" name="password" type="password" required>
+        <label for="confirm">Type your username to confirm</label>
+        <input class="input" id="confirm" name="confirm" autocomplete="off"
+               placeholder="{{ current_user.username }}" required>
       </div>
       <button class="btn btn--danger" type="submit">Delete everything</button>
     </form>

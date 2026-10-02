@@ -59,9 +59,9 @@ def make_detailed_pdf(
     *,
     period_start: date = date(2026, 7, 1),
     period_end: date = date(2026, 8, 12),
-    student_name: str = "MOKSSHA NANDU",
-    student_number: str = "60004250098",
-    roll_no: str = "C101",
+    student_name: str = "SOHAM NONDA",
+    student_number: str = "60000000001",
+    roll_no: str = "C000",
     session: str = "2026-2027, Semester III",
     program: str = "B.Tech in Computer Engineering",
 ) -> None:

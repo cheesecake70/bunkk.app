@@ -27,13 +27,15 @@
     return wrap;
   }
 
+  /* Dotted rather than BunkrFmt's "Thu 27 Aug": these sit in a dense list of
+     forty changed lectures, where the short form is what makes it scannable. */
   function fmtDate(iso) {
     var parts = String(iso).split("-");
     return parts.length === 3 ? parts[2] + "." + parts[1] : iso;
   }
 
   function fmtTime(iso) {
-    return String(iso).slice(0, 5);
+    return window.BunkrFmt.time(iso);
   }
 
   function plural(n, word) {
@@ -111,7 +113,10 @@
         row.appendChild(spacer);
         row.appendChild(el("span", "mono", move[0] === null ? "—" : move[0].toFixed(1) + "%"));
         row.appendChild(el("span", "diff-arrow", "→"));
-        var after = el("b", "mono " + (move[0] !== null && move[1] < move[0] ? "text-danger" : "text-safe"),
+        /* No colour when there was nothing to move from: a first upload showed
+           every subject in green, including the ones at 25%. */
+        var tone = move[0] === null ? "" : (move[1] < move[0] ? " text-danger" : " text-safe");
+        var after = el("b", "mono" + tone,
                        move[1] === null ? "—" : move[1].toFixed(1) + "%");
         row.appendChild(after);
         card.appendChild(row);
@@ -120,9 +125,12 @@
       result.appendChild(card);
     }
 
+    /* /plan, not /: a first upload has no timetable yet, so Today would show
+       nothing but a setup prompt — a dead end at the exact moment the app has
+       just learned everything about you. */
     var actions = el("div", "row");
-    var link = el("a", "btn btn--primary", "See my budget");
-    link.href = "/";
+    var link = el("a", "btn btn--primary", "See my plan");
+    link.href = "/plan";
     actions.appendChild(link);
     result.appendChild(actions);
   }
@@ -179,7 +187,7 @@
       confirm.textContent = "Merging…";
       fetch("/api/reports/" + data.snapshot_id + "/resolve", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: window.BunkrApi.headers({ "Content-Type": "application/json" }),
         body: JSON.stringify({ decisions: answers })
       })
         .then(window.BunkrApi.readJson)
@@ -193,9 +201,52 @@
     result.appendChild(card);
   }
 
-  function showError(message) {
+  function showError(message, claimedBy) {
     result.innerHTML = "";
-    result.appendChild(banner("danger", "Upload failed", message));
+    var wrap = banner("danger", "Upload failed", message);
+    if (claimedBy) wrap.querySelector(".banner__body").appendChild(claimedCard(claimedBy));
+    result.appendChild(wrap);
+  }
+
+  /* "Another account has this student number" is a dead end on its own: the
+     person reading it is almost always its owner, signed into the wrong one of
+     their two accounts. Name it, and hand them the way across.
+
+     The sign-out is a form rather than a link because signing out is a POST —
+     and it carries where to land, so you arrive at the login page with the
+     right account already filled in. */
+  function claimedCard(claimed) {
+    var card = el("div", "claimed");
+
+    var who = el("div", "claimed__who");
+    who.appendChild(el("span", "eyebrow", "That account"));
+    who.appendChild(el("b", "mono", claimed.username));
+    who.appendChild(el("span", "mono text-muted", claimed.email_hint));
+    card.appendChild(who);
+
+    var form = el("form", "claimed__action");
+    form.method = "post";
+    form.action = "/logout";
+    var next = document.createElement("input");
+    next.type = "hidden";
+    next.name = "next";
+    next.value = "/login?as=" + encodeURIComponent(claimed.username);
+    form.appendChild(next);
+    var token = document.createElement("input");
+    token.type = "hidden";
+    token.name = "csrf_token";
+    token.value = window.BunkrApi.csrfToken();
+    form.appendChild(token);
+
+    var button = el("button", "btn btn--sm", "Sign in as " + claimed.username);
+    button.type = "submit";
+    form.appendChild(button);
+    card.appendChild(form);
+
+    card.appendChild(el("div", "claimed__note",
+      "Signing in there swaps you out of this account — this one keeps whatever " +
+      "you've put in it."));
+    return card;
   }
 
   /* ---- upload -------------------------------------------------------------- */
@@ -209,10 +260,13 @@
     var form = new FormData();
     form.append("report", file);
 
-    fetch("/api/reports", { method: "POST", body: form })
+    fetch("/api/reports", { method: "POST", body: form, headers: window.BunkrApi.headers() })
       .then(window.BunkrApi.readJson)
       .then(function (res) {
-        if (!res.ok) { showError(res.body.error || "Something went wrong."); return; }
+        if (!res.ok) {
+          showError(res.body.error || "Something went wrong.", res.body.claimed_by);
+          return;
+        }
         if (res.body.status === "duplicate") {
           result.innerHTML = "";
           result.appendChild(banner("info", "Nothing new",

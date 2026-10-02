@@ -101,6 +101,76 @@
     });
   }
 
+  /* ---- one day at a time, on a phone -------------------------------------- */
+
+  /* The tabs are hidden by CSS above 640px, where all seven columns fit. The
+     class they toggle is only honoured inside that media query, so a desktop
+     never loses six days to a stale selection. */
+  (function () {
+    var tabs = document.querySelector(".tt-daytabs");
+    if (!tabs) return;
+
+    function show(weekday) {
+      [].forEach.call(grid.querySelectorAll(".tt__col"), function (col) {
+        col.classList.toggle("is-day", col.dataset.weekday === String(weekday));
+      });
+      [].forEach.call(tabs.querySelectorAll(".tabs__tab"), function (tab) {
+        tab.setAttribute("aria-selected",
+                         String(tab.dataset.weekday === String(weekday)));
+      });
+    }
+
+    tabs.addEventListener("click", function (event) {
+      var tab = event.target.closest(".tabs__tab");
+      if (tab) show(tab.dataset.weekday);
+    });
+
+    function isEmpty(weekday) {
+      var column = grid.querySelector('.tt__blocks[data-weekday="' + weekday + '"]');
+      return !column || !column.querySelector(".tt__block");
+    }
+
+    // Monday is 0 here; JavaScript's Sunday is 0, hence the shuffle. Opening on
+    // an empty Sunday is technically "today" and useless — fall through to the
+    // first day that has anything on it.
+    var today = new Date().getDay();
+    var start = today === 0 ? 6 : today - 1;
+    if (isEmpty(start)) {
+      for (var i = 1; i <= 6 && isEmpty(start); i++) start = (start + 1) % 7;
+    }
+    show(start);
+  })();
+
+  /* ---- clashes ----------------------------------------------------------- */
+
+  /* Mirrors planning.overlapping on the server, for the same reason fillGaps
+     mirrors fill_gaps: the grid has to keep telling the truth while you edit it,
+     not only after a reload. */
+  function markOverlaps() {
+    var blocks = [].slice.call(grid.querySelectorAll('.tt__block[data-kind="class"]'));
+    blocks.forEach(function (block) {
+      block.classList.remove("is-overlap");
+      var hint = block.querySelector(".tt__hint");
+      if (hint) hint.remove();
+    });
+
+    blocks.forEach(function (a, i) {
+      blocks.slice(i + 1).forEach(function (b) {
+        if (a.dataset.weekday !== b.dataset.weekday) return;
+        if (a.dataset.start < b.dataset.end && b.dataset.start < a.dataset.end) {
+          [a, b].forEach(function (block) {
+            if (block.classList.contains("is-overlap")) return;
+            block.classList.add("is-overlap");
+            var hint = document.createElement("span");
+            hint.className = "tt__hint";
+            hint.textContent = "shares this slot";
+            block.appendChild(hint);
+          });
+        }
+      });
+    });
+  }
+
   /* ---- persistence ------------------------------------------------------- */
 
   function collect() {
@@ -222,6 +292,7 @@
     );
     dialog.close();
     fillGaps();
+    markOverlaps();
     persist();
   });
 
@@ -232,6 +303,7 @@
   deleteBtn.addEventListener("click", function () {
     if (editing) editing.remove();
     dialog.close();
+    markOverlaps();
     /* No fillGaps() here on purpose: deleting a break must not immediately
        redraw it. Deleting a class can only widen an existing gap, and widening
        one past MAX_GAP_MINUTES is the user saying the day ends there. */
