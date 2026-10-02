@@ -22,6 +22,8 @@
 
   var mode = window.localStorage.getItem("bunkr.calendar-mode") || "absence";
 
+  var rangeCard = document.getElementById("cal-range");
+
   function setMode(next) {
     mode = next;
     window.localStorage.setItem("bunkr.calendar-mode", next);
@@ -29,6 +31,9 @@
       tab.setAttribute("aria-selected", String(tab.dataset.mode === next));
     });
     hint.textContent = HINTS[next];
+    // Marking a stretch off is a holiday action; it has no meaning in the other
+    // mode, where a range would be a very different (and much worse) mistake.
+    if (rangeCard) rangeCard.hidden = next !== "holiday";
   }
 
   setMode(mode);
@@ -79,7 +84,8 @@
     saveHoliday(cell, !was).then(function (ok) {
       if (!ok) return;
       window.BunkrToast.show(
-        (was ? "Holiday removed for " : "Holiday added for ") + cell.dataset.date,
+        (was ? "Holiday removed for " : "Holiday added for ") +
+        window.BunkrFmt.date(cell.dataset.date),
         {
           onUndo: function () {
             paintHoliday(cell, was);
@@ -87,6 +93,59 @@
           }
         }
       );
+    });
+  }
+
+  /* ---- a whole stretch at once -------------------------------------------- */
+
+  function paintRange(dates, isHoliday) {
+    dates.forEach(function (iso) {
+      var cell = document.querySelector('.cal__day[data-date="' + iso + '"]');
+      if (cell) paintHoliday(cell, isHoliday);
+    });
+  }
+
+  function markRange(frm, to, name) {
+    return window.BunkrApi
+      .post("/api/calendar/range", { from: frm, to: to, name: name, kind: "holiday" })
+      .then(function (res) {
+        if (!res.ok) {
+          window.BunkrToast.error(res.body.error || "Couldn't mark those days.");
+          return null;
+        }
+        paintRange(res.body.dates, true);
+        return res.body.dates;
+      });
+  }
+
+  var rangeSave = document.getElementById("range-save");
+  if (rangeSave) {
+    rangeSave.addEventListener("click", function () {
+      var frm = document.getElementById("range-from").value;
+      var to = document.getElementById("range-to").value;
+      var name = document.getElementById("range-name").value;
+      if (!frm || !to) {
+        window.BunkrToast.error("Pick both dates first.");
+        return;
+      }
+
+      rangeSave.disabled = true;
+      markRange(frm, to, name).then(function (dates) {
+        rangeSave.disabled = false;
+        if (!dates) return;
+        window.BunkrToast.show(
+          "Marked " + dates.length + " days off from " + window.BunkrFmt.date(frm),
+          {
+            onUndo: function () {
+              return window.BunkrApi
+                .post("/api/calendar/range", { from: frm, to: to, kind: null })
+                .then(function (res) {
+                  if (res.ok) paintRange(res.body.dates, false);
+                });
+            }
+          }
+        );
+      });
     });
   }
 

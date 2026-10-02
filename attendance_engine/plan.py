@@ -38,6 +38,12 @@ class DayVerdict(str, enum.Enum):
     PARTIAL = "partial"  # some of it does
     GO = "go"            # nothing does
     OFF = "off"          # no lectures scheduled
+    #: The decision has been made: what is left of the day is either already
+    #: committed or unskippable, so there is nothing to advise. Separate from
+    #: SKIP because a day you have written off is not the same claim as "this
+    #: is safe to skip" — the commitment may well have broken a limit, and
+    #: saying SKIP there told the student their own over-spend was fine.
+    PLANNED = "planned"
 
 
 @dataclass(frozen=True)
@@ -142,6 +148,14 @@ class DayPlan:
     covers_break: str | None = None
     #: The lectures the winning cut actually skips, in clock order.
     skippable: list[PlannedLecture] = field(default_factory=list)
+    #: How many of the day's lectures already have an absence against them.
+    planned_count: int = 0
+    #: True when something already committed on this day has put its subject —
+    #: or the overall rule — below the limit. The commitment stands; the day
+    #: just stops pretending it was free.
+    over_budget: bool = False
+    #: True when every lecture on the day is committed.
+    whole_day: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -260,47 +274,68 @@ def day_plans(
     """
     budgets = {s.subject_id: s.budget for s in wallet.subjects}
     breaks = breaks or {}
+
+    # Which subjects the plan has already put under water. Derived from the same
+    # verdict `simulate()` reads for its `breaks` list, so a day that says "over
+    # budget" and the banner that names the subject can never disagree.
+    broken = {s.subject_id for s in wallet.subjects if s.verdict is Verdict.DANGER}
+    overall_broken = wallet.overall_verdict is Verdict.DANGER
+
     return [
         _day_plan(day, days.get(day, []), budgets, wallet.overall_budget,
-                  breaks.get(day, []))
+                  breaks.get(day, []), broken, overall_broken)
         for day in horizon
     ]
 
 
 def _day_plan(day: date, lectures: list[PlannedLecture],
               budgets: dict[int, int], overall_budget: int,
-              day_breaks: list[BreakSpan] | None = None) -> DayPlan:
+              day_breaks: list[BreakSpan] | None = None,
+              broken: set[int] | None = None,
+              overall_broken: bool = False) -> DayPlan:
     if not lectures:
         return DayPlan(on_date=day, lectures=[], verdict=DayVerdict.OFF,
                        reason="No classes scheduled.")
 
     ordered = sorted(lectures, key=lambda l: l.start_time)
     day_breaks = day_breaks or []
+    broken = broken or set()
 
     # Lectures you have already committed to missing are spent: the wallet
     # deducted them the moment you committed. Only what is still undecided is
     # worth asking about — judging the committed ones again charges the budget
     # twice, which is why a day written off in full used to come back as "part
     # skip", advice about a decision already made.
+    committed = [l for l in ordered if l.planned]
     pending = [l for l in ordered if not l.planned]
+
+    over = bool(committed) and (
+        overall_broken or any(l.subject_id in broken for l in committed)
+    )
+    spent = [l.code for l in committed if l.subject_id in broken]
+    overspend = _overspend_sentence(spent, overall_broken) if over else ""
+
     if not pending:
         return DayPlan(
-            on_date=day, lectures=ordered, verdict=DayVerdict.SKIP,
-            reason="Already planning to miss " + _cost_sentence(ordered) + ".",
+            on_date=day, lectures=ordered, verdict=DayVerdict.PLANNED,
+            reason="Skipping the whole day — " + _cost_sentence(ordered) + "."
+                   + overspend,
             skippable_codes=sorted({l.code for l in ordered}),
             skippable=ordered,
             freed_minutes=_span(_day_start(ordered, day_breaks),
                                 _day_end(ordered, day_breaks)),
+            planned_count=len(committed), over_budget=over, whole_day=True,
         )
 
     if _fits(pending, budgets, overall_budget):
         return DayPlan(
             on_date=day, lectures=ordered, verdict=DayVerdict.SKIP,
-            reason=_cost_sentence(pending) + " — all within budget.",
+            reason=_cost_sentence(pending) + " — all within budget." + overspend,
             skippable_codes=sorted({l.code for l in pending}),
             skippable=pending,
             freed_minutes=_span(_day_start(ordered, day_breaks),
                                 _day_end(ordered, day_breaks)),
+            planned_count=len(committed), over_budget=over,
         )
 
     # Every cut that fits, scored by the wall-clock it frees rather than the
@@ -337,6 +372,23 @@ def _day_plan(day: date, lectures: list[PlannedLecture],
         ))
 
     if not options:
+        # Nothing left to decide. With commitments already on the day that is a
+        # settled plan, not a warning: telling someone who has taken the app's
+        # own "leave after 09:00" advice that the day is now a MUST GO reads as
+        # the advice having been withdrawn.
+        if committed:
+            return DayPlan(
+                on_date=day, lectures=ordered, verdict=DayVerdict.PLANNED,
+                reason=_planned_sentence(committed, pending) + overspend,
+                leave_after=_leave_boundary(committed, pending),
+                arrive_at=_arrive_boundary(committed, pending),
+                skippable_codes=sorted({l.code for l in committed}),
+                skippable=committed,
+                freed_minutes=_span(_day_start(committed, []),
+                                    _day_end(committed, [])),
+                planned_count=len(committed), over_budget=over,
+            )
+
         blockers = sorted({l.code for l in pending if budgets.get(l.subject_id, 0) <= 0})
         reason = (
             "No room left in " + ", ".join(blockers) + "."
@@ -355,12 +407,14 @@ def _day_plan(day: date, lectures: list[PlannedLecture],
     reason = _partial_sentence(best, covered)
 
     return DayPlan(
-        on_date=day, lectures=ordered, verdict=DayVerdict.PARTIAL, reason=reason,
+        on_date=day, lectures=ordered, verdict=DayVerdict.PARTIAL,
+        reason=reason + overspend,
         leave_after=best.leave_after, arrive_at=best.arrive_at,
         skippable_codes=sorted({l.code for l in best.skipped}),
         skippable=best.skipped,
         freed_minutes=best.freed,
         covers_break=covered,
+        planned_count=len(committed), over_budget=over,
     )
 
 
@@ -431,6 +485,57 @@ def _partial_sentence(cut: _Cut, covered: str | None) -> str:
     if covered:
         head += f" and {covered}"
     return f"{head}. {_hours(cut.freed)} free."
+
+
+def _leave_boundary(committed: list[PlannedLecture],
+                    pending: list[PlannedLecture]) -> time | None:
+    """When the committed lectures are the tail of the day, the time you leave."""
+    if not pending or min(l.start_time for l in committed) < max(
+        l.end_time for l in pending
+    ):
+        return None
+    return max(l.end_time for l in pending)
+
+
+def _arrive_boundary(committed: list[PlannedLecture],
+                     pending: list[PlannedLecture]) -> time | None:
+    """When the committed lectures are the head of the day, the time you arrive."""
+    if not pending or max(l.end_time for l in committed) > min(
+        l.start_time for l in pending
+    ):
+        return None
+    return min(l.start_time for l in pending)
+
+
+def _planned_sentence(committed: list[PlannedLecture],
+                      pending: list[PlannedLecture]) -> str:
+    """What a settled day says: the shape of the plan, then what it leaves."""
+    rest = "The rest is a must-attend."
+    leave = _leave_boundary(committed, pending)
+    if leave is not None:
+        return (f"Leaving after {leave:%H:%M} is planned — skips "
+                f"{_cost_sentence(committed)}. {rest}")
+
+    arrive = _arrive_boundary(committed, pending)
+    if arrive is not None:
+        return (f"Arriving by {arrive:%H:%M} is planned — skips "
+                f"{_cost_sentence(committed)}. {rest}")
+
+    return f"{_cost_sentence(committed)} planned. {rest}"
+
+
+def _overspend_sentence(codes: list[str], overall_broken: bool) -> str:
+    """Named after what it is: the day's commitments have cost more than it had.
+
+    Kept as a suffix on whatever the day was going to say, because the plan is
+    still the plan — the student is being told the price, not asked to redo it.
+    """
+    named = sorted(set(codes))
+    if named:
+        return " Over budget: " + ", ".join(named) + "."
+    if overall_broken:
+        return " Over budget overall."
+    return ""
 
 
 def _fits(lectures: list[PlannedLecture], budgets: dict[int, int],

@@ -1,4 +1,4 @@
-"""Generate the PWA icon set from the design tokens. Run once; commit the PNGs.
+"""Generate the favicon and touch icon from the design tokens. Run once; commit the PNGs.
 
     python tools/make_icons.py
 
@@ -57,12 +57,11 @@ def draw_icon(size: int, *, maskable: bool = False) -> Image.Image:
 
 def main() -> None:
     ICONS.mkdir(parents=True, exist_ok=True)
+    # Only the two files base.html links to. The PWA manifest set was dropped
+    # with the PWA; regenerate it here if a manifest ever comes back.
     outputs = {
-        "icon-192.png": draw_icon(192),
-        "icon-512.png": draw_icon(512),
-        "icon-maskable-512.png": draw_icon(512, maskable=True),
-        # iOS ignores the manifest for the home-screen icon and has no
-        # transparency handling, so it gets its own flattened file.
+        # iOS has no transparency handling for the home-screen icon, so it
+        # gets its own flattened file.
         "apple-touch-icon.png": draw_icon(180).convert("RGB"),
         "favicon-32.png": draw_icon(32),
     }

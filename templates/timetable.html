@@ -37,7 +37,17 @@
   </div>
 {% endif %}
 
+{# On a phone the seven columns stack into seven full-width lists, so getting to
+   Friday is a long scroll. One day at a time, switched here. #}
+<div class="tabs tt-daytabs" role="tablist" aria-label="Day">
+  {% for label in weekdays %}
+    <button class="tabs__tab" type="button" role="tab" data-weekday="{{ loop.index0 }}"
+            aria-selected="false">{{ label }}</button>
+  {% endfor %}
+</div>
+
 <form method="post" id="grid-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="tt" id="tt">
     {% for label in weekdays %}
       {% set wd = loop.index0 %}
@@ -45,7 +55,8 @@
         <div class="tt__dow">{{ label }}</div>
         <div class="tt__blocks" data-weekday="{{ wd }}">
           {% for entry in entries if entry.weekday == wd %}
-            <div class="tt__block tt__block--{{ entry.kind }}"
+            {% set clashes = (entry.weekday, entry.start_time, entry.end_time) in overlaps %}
+            <div class="tt__block tt__block--{{ entry.kind }} {% if clashes %}is-overlap{% endif %}"
                  data-kind="{{ entry.kind }}"
                  data-weekday="{{ entry.weekday }}"
                  data-start="{{ entry.start_time.isoformat() }}"
@@ -61,6 +72,9 @@
                   {{ subjects_by_id[entry.subject_id].code if entry.subject_id in subjects_by_id else '—' }}
                 {% endif %}
               </span>
+              {# Two classes in one slot is the college's doing — say so, or the
+                 grid reads as though it drew the same hour twice. #}
+              {% if clashes %}<span class="tt__hint">shares this slot</span>{% endif %}
             </div>
           {% endfor %}
         </div>

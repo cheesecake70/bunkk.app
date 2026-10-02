@@ -24,8 +24,22 @@
     });
   }
 
+  /* Every POST/PUT/DELETE carries the session's CSRF token, read from the
+     <meta> tag base.html renders. A missing token is a 400, so a page left
+     open across a deploy fails loudly rather than silently. */
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute("content") : "";
+  }
+
+  function headers(extra) {
+    var out = { "X-CSRFToken": csrfToken() };
+    Object.keys(extra || {}).forEach(function (k) { out[k] = extra[k]; });
+    return out;
+  }
+
   function request(method, url, payload) {
-    var options = { method: method, headers: {} };
+    var options = { method: method, headers: method === "GET" ? {} : headers() };
     if (payload !== undefined && payload !== null) {
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(payload);
@@ -42,6 +56,8 @@
     post: function (url, payload) { return request("POST", url, payload); },
     put: function (url, payload) { return request("PUT", url, payload); },
     del: function (url, payload) { return request("DELETE", url, payload); },
-    readJson: readJson
+    readJson: readJson,
+    csrfToken: csrfToken,
+    headers: headers
   };
 })();

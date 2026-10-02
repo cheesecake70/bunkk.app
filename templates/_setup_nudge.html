@@ -1,0 +1,25 @@
+{# The one step left before verdicts work.
+
+   Today and Plan were carrying the same card with the same two sentences and
+   had already started to drift apart in wording. Pass `title` for the heading;
+   `next_step` comes from `planning.advanced_ready`. #}
+<div class="card card--purple" style="margin-bottom:var(--sp-6)">
+  <div class="row--between">
+    <div>
+      <h3 style="margin-bottom:var(--sp-2)">{{ title or 'Turn on planning' }}</h3>
+      <p class="text-muted" style="margin:0;font-size:var(--text-sm)">
+        {% if next_step == 'timetable' %}
+          Bunkr can already see your weekly pattern in the reports — confirm it and
+          it can count exactly how many lectures are left.
+        {% else %}
+          One date left: when does the semester end?
+        {% endif %}
+      </p>
+    </div>
+    {% if next_step == 'timetable' %}
+      <a class="btn btn--accent" href="{{ url_for('core.timetable') }}">Confirm timetable</a>
+    {% else %}
+      <a class="btn btn--accent" href="{{ url_for('core.calendar') }}">Set end date</a>
+    {% endif %}
+  </div>
+</div>

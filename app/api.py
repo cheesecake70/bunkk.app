@@ -12,15 +12,19 @@ from report_parser import ReportParseError
 from attendance_engine import DayVerdict
 
 from . import db, planning
-from .merge import MergeError, MergeResult, ingest, resolve_proposals
-from .models import LectureInstance, LecturePrediction, PlannedAbsence, Subject
+from .merge import IdentityClaimed, MergeError, MergeResult, ingest, resolve_proposals
+from .models import LectureInstance, PlannedAbsence, Subject
 from .services import (
     UNKNOWN_STATUSES,
+    apply_prediction_map,
     apply_subject_edits,
     coverage_for,
     dashboard_for,
+    predictions_for,
+    set_predictions,
     settings_for,
     subject_limit,
+    subjects_for,
 )
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -45,6 +49,18 @@ def upload_report():
 
     try:
         result = ingest(current_user, data, file.filename)
+    except IdentityClaimed as exc:
+        # Name the account holding this student number. Being told only that
+        # "another account" has it leaves the one person who can act on it —
+        # its owner, signed into their other account — with nowhere to go.
+        return jsonify(
+            error=str(exc),
+            claimed_by={
+                "username": exc.username,
+                "email_hint": exc.email_hint,
+                "student_number": exc.student_number,
+            },
+        ), 422
     except (ReportParseError, MergeError) as exc:
         # Parser errors carry user-facing wording by design (report_parser.types).
         return jsonify(error=str(exc)), 422
@@ -70,10 +86,37 @@ def resolve_report(snapshot_id: int):
 @bp.get("/dashboard")
 @login_required
 def dashboard():
+    return jsonify(_stats_payload())
+
+
+def _stats_payload() -> dict:
+    """Every figure a page might need to repaint itself after a guess.
+
+    One payload rather than three endpoints, because a guess moves all of them
+    at once: the subject's own percentages, the untouched worst case beside
+    them, and — once planning is on — the budget those numbers feed.
+    """
     dash = dashboard_for(current_user)
     coverage = coverage_for(current_user)
-    return jsonify(
-        overall={
+    guesses = predictions_for(current_user)
+    # The safe reading has to stay reachable: a guess that turns out wrong
+    # should be visible as a guess, not just quietly wrong.
+    true_worst = dashboard_for(current_user, use_predictions=False) if guesses else None
+
+    # One query for the lot: this runs on every guess, and fifty of them is the
+    # normal case rather than the extreme one.
+    by_subject: dict[int, int] = {}
+    if guesses:
+        rows = (
+            db.session.query(LectureInstance.subject_id)
+            .filter(LectureInstance.id.in_(guesses))
+            .all()
+        )
+        for (subject_id,) in rows:
+            by_subject[subject_id] = by_subject.get(subject_id, 0) + 1
+
+    payload = {
+        "overall": {
             "limit": dash.overall.limit,
             "present": dash.overall.counts.present,
             "absent": dash.overall.counts.absent,
@@ -84,7 +127,7 @@ def dashboard():
             "can_miss": dash.overall.can_miss,
             "verdict": dash.overall.verdict.value,
         },
-        subjects=[
+        "subjects": [
             {
                 "id": s.subject_id,
                 "code": s.code,
@@ -94,16 +137,27 @@ def dashboard():
                 "present": s.counts.present,
                 "absent": s.counts.absent,
                 "pending": s.counts.unknown,
+                "guessed": by_subject.get(s.subject_id, 0),
                 "worst_pct": _pct(s.worst_pct),
                 "official_pct": _pct(s.official_pct),
                 "best_pct": _pct(s.best_pct),
                 "can_miss": s.can_miss_effective,
                 "recover_needed": s.recover_needed,
                 "verdict": s.verdict.value,
+                # The status badge is a sentence about all three of these, so
+                # the client needs them all to repaint it (templates/_macros.html).
+                "pending_dominated": s.pending_dominated,
             }
             for s in dash.subjects
         ],
-        coverage={
+        "guesses": {
+            "count": len(guesses),
+            "true_worst": {
+                "overall_pct": _pct(true_worst.overall.worst_pct),
+                "can_miss": true_worst.overall.can_miss,
+            } if true_worst else None,
+        },
+        "coverage": {
             "gaps": [str(g) for g in coverage.gaps],
             "stale_days": coverage.stale_days,
             "is_stale": coverage.is_stale,
@@ -111,7 +165,13 @@ def dashboard():
             "suggested_export": str(coverage.suggested_export)
             if coverage.suggested_export else None,
         },
-    )
+    }
+
+    if planning.advanced_ready(current_user)[0]:
+        # No `days`: a guess changes the budget, and the strip is a projection
+        # of it that the page will ask for separately if it needs one.
+        payload["wallet"] = _wallet_payload(with_days=False)
+    return payload
 
 
 @bp.post("/calendar/day")
@@ -135,6 +195,37 @@ def calendar_day():
     return jsonify(ok=True, date=on_date.isoformat(), kind=kind)
 
 
+#: A term's worth of days at once would more likely be a mis-typed year than a
+#: holiday, and marking every remaining day off is not a thing anyone means.
+MAX_RANGE_DAYS = 92
+
+
+@bp.post("/calendar/range")
+@login_required
+def calendar_range():
+    """Mark a whole stretch off — a mid-sem break, a festival week."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        frm = date.fromisoformat(payload.get("from", ""))
+        to = date.fromisoformat(payload.get("to", ""))
+    except ValueError:
+        return jsonify(error="Bad date."), 400
+
+    kind = payload.get("kind", "holiday")
+    if kind not in (None, "holiday"):
+        return jsonify(error="Unknown day type."), 400
+    if to < frm:
+        return jsonify(error="That range ends before it starts."), 400
+    if frm < date.today():
+        return jsonify(error="Bunkr only plans forwards — past days can't change."), 400
+    if (to - frm).days + 1 > MAX_RANGE_DAYS:
+        return jsonify(error="That's longer than a semester — check the dates."), 400
+
+    touched = planning.set_days(current_user, frm, to, kind,
+                                name=(payload.get("name") or None))
+    return jsonify(ok=True, kind=kind, dates=[d.isoformat() for d in touched])
+
+
 @bp.route("/lectures/<int:lecture_id>/prediction", methods=["PUT", "DELETE"])
 @login_required
 def lecture_prediction(lecture_id: int):
@@ -143,17 +234,9 @@ def lecture_prediction(lecture_id: int):
     if lecture is None or lecture.user_id != current_user.id:
         return jsonify(error="Not found."), 404
 
-    existing = (
-        db.session.query(LecturePrediction)
-        .filter_by(user_id=current_user.id, lecture_id=lecture_id)
-        .one_or_none()
-    )
-
     if request.method == "DELETE":
-        if existing is not None:
-            db.session.delete(existing)
-            db.session.commit()
-        return jsonify(ok=True, predicted=None)
+        previous = set_predictions(current_user, None, lecture_ids=[lecture_id])
+        return jsonify(_prediction_result(None, previous))
 
     # Guessing at a lecture the college has already marked would be overwriting
     # fact with opinion, which is the one thing this feature must never do.
@@ -164,14 +247,80 @@ def lecture_prediction(lecture_id: int):
     if predicted not in ("P", "A"):
         return jsonify(error="Predict either P or A."), 400
 
-    if existing is None:
-        existing = LecturePrediction(user_id=current_user.id, lecture_id=lecture_id,
-                                     predicted=predicted)
-        db.session.add(existing)
-    else:
-        existing.predicted = predicted
-    db.session.commit()
-    return jsonify(ok=True, predicted=predicted)
+    previous = set_predictions(current_user, predicted, lecture_ids=[lecture_id])
+    return jsonify(_prediction_result(predicted, previous))
+
+
+@bp.post("/subjects/<int:subject_id>/predictions")
+@login_required
+def subject_predictions(subject_id: int):
+    """Guess at every unmarked lecture of one subject in one go.
+
+    Fifty pending lectures is a normal state two months into term. One at a
+    time, each with a page reload, is not something anyone finishes.
+    """
+    subject = db.session.get(Subject, subject_id)
+    if subject is None or subject.user_id != current_user.id:
+        return jsonify(error="Unknown subject."), 404
+
+    predicted = (request.get_json(silent=True) or {}).get("predicted")
+    if predicted not in ("P", "A", None):
+        return jsonify(error="Predict either P or A, or null to clear."), 400
+
+    previous = set_predictions(current_user, predicted, subject_id=subject_id)
+    return jsonify(_prediction_result(predicted, previous))
+
+
+@bp.post("/predictions/bulk")
+@login_required
+def bulk_predictions():
+    """Every pending lecture at once, or a named set of them.
+
+    The named form is what Undo posts: the `previous` map from any of these
+    endpoints goes straight back in as `lectures`.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    if "lectures" in payload:
+        wanted = payload["lectures"]
+        if not isinstance(wanted, dict):
+            return jsonify(error="Malformed restore."), 400
+        changes: dict[int, str | None] = {}
+        for key, value in wanted.items():
+            if value not in ("P", "A", None):
+                return jsonify(error="Predict either P or A, or null to clear."), 400
+            try:
+                changes[int(key)] = value
+            except (TypeError, ValueError):
+                return jsonify(error="Malformed restore."), 400
+        previous = apply_prediction_map(current_user, changes)
+        return jsonify(_prediction_result(None, previous))
+
+    predicted = payload.get("predicted")
+    if predicted not in ("P", "A", None):
+        return jsonify(error="Predict either P or A, or null to clear."), 400
+
+    previous = set_predictions(current_user, predicted)
+    return jsonify(_prediction_result(predicted, previous))
+
+
+def _prediction_result(predicted: str | None,
+                       previous: dict[int, str | None]) -> dict:
+    """What every guess endpoint answers with: what changed, and the new totals.
+
+    The memo drop is load-bearing. `predictions_for` and `counts_by_subject` are
+    cached per request, so building this after a write without clearing them
+    would answer with the numbers from before the guess — and the page would
+    patch itself back to exactly what it was already showing.
+    """
+    planning.forget_derived()
+    return {
+        "ok": True,
+        "changed": len(previous),
+        "predicted": predicted,
+        "previous": {str(k): v for k, v in previous.items()},
+        "stats": _stats_payload(),
+    }
 
 
 @bp.get("/day/<on_date>")
@@ -190,10 +339,7 @@ def day_sheet(on_date: str):
     holiday = next(
         (h for h in planning.holidays_for(current_user) if h.on_date == day), None
     )
-    codes = {
-        s.id: s.code
-        for s in db.session.query(Subject).filter_by(user_id=current_user.id).all()
-    }
+    codes = {s.id: s.code for s in subjects_for(current_user)}
     planned = (
         db.session.query(PlannedAbsence)
         .filter_by(user_id=current_user.id, on_date=day)
@@ -214,8 +360,21 @@ def day_sheet(on_date: str):
     win = planning.windows(current_user)
     end = planning.semester_end(current_user)
 
+    # One wallet for the whole answer: the day's verdict and every lecture's
+    # remaining budget come out of the same projection, so they can't disagree.
+    ready, _ = planning.advanced_ready(current_user)
+    wallet = planning.wallet_for(current_user) if ready else None
+    plan = planning.day_plan_on(current_user, day, wallet=wallet) if wallet else None
+    budgets = wallet.by_id() if wallet else {}
+
+    occurrences = planning.lectures_on(current_user, day)
+    # Two classes timetabled into one slot is a real thing colleges do; the
+    # sheet says so rather than showing two rows that look like a mistake.
+    starts = [o.slot.start_time for o in occurrences]
+
     return jsonify(
         date=day.isoformat(),
+        label=day.strftime("%A %d %b"),
         is_past=day < date.today(),
         in_semester=bool(end and day <= end),
         # False past the next checkpoint: the absence is real and will be
@@ -224,6 +383,7 @@ def day_sheet(on_date: str):
         horizon_to=win.remaining_to.isoformat() if win.remaining_to else None,
         holiday=({"name": holiday.name} if holiday else None),
         whole_day_absence_id=(whole_day.id if whole_day else None),
+        plan=_day_entry(plan),
         lectures=[
             {
                 "subject_id": o.slot.subject_id,
@@ -231,8 +391,13 @@ def day_sheet(on_date: str):
                 "start": o.slot.start_time.isoformat(),
                 "end": o.slot.end_time.isoformat(),
                 "absence_id": absence_for(o.slot.subject_id, o.slot.start_time),
+                "budget": (budgets[o.slot.subject_id].budget
+                           if o.slot.subject_id in budgets else None),
+                "verdict": (budgets[o.slot.subject_id].verdict.value
+                            if o.slot.subject_id in budgets else None),
+                "same_slot": starts.count(o.slot.start_time) > 1,
             }
-            for o in planning.lectures_on(current_user, day)
+            for o in occurrences
         ],
         breaks=[
             {
@@ -244,7 +409,7 @@ def day_sheet(on_date: str):
         ],
         # The half-day the maths actually recommends, so the sheet can offer it
         # in one tap instead of leaving you to work out which boxes to tick.
-        partial=_partial_payload(planning.day_plan_on(current_user, day)),
+        partial=_partial_payload(plan),
     )
 
 
@@ -299,9 +464,14 @@ def _ensure_absence(on_date, subject_id, raw_start, note=None):
         return None, (jsonify(error="Bad time."), 400)
 
     # An absence against a lecture the timetable doesn't have would count zero
-    # anyway; refusing it says so instead of silently storing a no-op.
-    if subject_id is not None:
-        lectures = planning.lectures_on(current_user, on_date)
+    # anyway; refusing it says so instead of silently storing a no-op. The same
+    # is true of a whole day with nothing on it — a Sunday, or a holiday — which
+    # used to be accepted and then sit in the committed list meaning nothing.
+    lectures = planning.lectures_on(current_user, on_date)
+    if subject_id is None:
+        if not lectures:
+            return None, (jsonify(error="No classes that day."), 422)
+    else:
         matches = [o for o in lectures if o.slot.subject_id == subject_id
                    and (start_time is None
                         or planning.same_minute(o.slot.start_time, start_time))]
@@ -342,7 +512,7 @@ def add_absence():
 
     db.session.commit()
     # The id rides along so the caller can offer Undo without re-querying.
-    return jsonify(dict(_wallet_payload(), absence_id=row.id))
+    return jsonify(dict(_wallet_payload(focus=on_date), absence_id=row.id))
 
 
 @bp.post("/absences/batch")
@@ -378,7 +548,7 @@ def add_absences():
         ids[f"{item.get('subject_id')}|{item.get('start')}"] = row.id
 
     db.session.commit()
-    return jsonify(dict(_wallet_payload(), absence_ids=ids))
+    return jsonify(dict(_wallet_payload(focus=on_date), absence_ids=ids))
 
 
 @bp.delete("/absences/<int:absence_id>")
@@ -387,9 +557,12 @@ def remove_absence(absence_id: int):
     row = db.session.get(PlannedAbsence, absence_id)
     if row is None or row.user_id != current_user.id:
         return jsonify(error="Not found."), 404
+    # Read before the delete: the row is the only thing that knows which day the
+    # caller is looking at, and it is about to stop existing.
+    on_date = row.on_date
     db.session.delete(row)
     db.session.commit()
-    return jsonify(_wallet_payload())
+    return jsonify(_wallet_payload(focus=on_date))
 
 
 @bp.post("/simulate")
@@ -408,7 +581,11 @@ def simulate_plan():
             ))
         except (KeyError, TypeError, ValueError):
             return jsonify(error="Malformed absence in the plan."), 400
-    return jsonify(_wallet_payload(extras))
+
+    # "light" is the pre-commit check: it asks whether a plan would break
+    # anything, and never draws the strip it would have to project to answer
+    # anything else.
+    return jsonify(_wallet_payload(extras, with_days=not payload.get("light")))
 
 
 @bp.put("/timetable")
@@ -424,7 +601,12 @@ def save_timetable():
     if not isinstance(payload, dict) or not isinstance(payload.get("blocks"), list):
         return jsonify(error="Malformed request."), 400
 
-    entries = planning.entries_from(payload["blocks"])
+    # Narrowed to what will actually be stored before anything is judged on it:
+    # `save_timetable` blanks the current version before writing, so a grid
+    # whose classes all named someone else's subject used to pass this guard,
+    # wipe the timetable, and still be answered with `ok: true, classes: 1`.
+    entries = planning.storable_entries(current_user,
+                                        planning.entries_from(payload["blocks"]))
     if not any(e.kind == "class" for e in entries):
         return jsonify(
             error="Add at least one class — an empty timetable can't project anything."
@@ -455,7 +637,7 @@ def update_subject(subject_id: int):
     if not isinstance(payload, dict):
         return jsonify(error="Malformed request."), 400
 
-    siblings = db.session.query(Subject).filter_by(user_id=current_user.id).all()
+    siblings = subjects_for(current_user)
     values = {k: payload[k] for k in ("name", "code", "custom_limit") if k in payload}
     if not values:
         return jsonify(error="Nothing to save."), 400
@@ -537,10 +719,42 @@ def skip_ladder(subject_id: int):
     )
 
 
-def _wallet_payload(extras=None) -> dict:
+def _day_entry(plan) -> dict | None:
+    """One day, as every surface needs it.
+
+    The strip, the day sheet and Today's hero all describe the same day, so they
+    read the same dict rather than three views assembling their own.
+    """
+    if plan is None:
+        return None
+    return {
+        "date": plan.on_date.isoformat(),
+        "label": plan.on_date.strftime("%A %d %b"),
+        "verdict": plan.verdict.value,
+        "reason": plan.reason,
+        "planned_count": plan.planned_count,
+        "over_budget": plan.over_budget,
+        "whole_day": plan.whole_day,
+        "leave_after": plan.leave_after.isoformat() if plan.leave_after else None,
+        "arrive_at": plan.arrive_at.isoformat() if plan.arrive_at else None,
+        "lectures": [
+            {"code": l.code, "start": l.start_time.isoformat()}
+            for l in plan.lectures
+        ],
+    }
+
+
+def _wallet_payload(extras=None, *, focus: date | None = None,
+                    with_days: bool = True) -> dict:
+    """The recomputed wallet, and optionally the strip and one focused day.
+
+    `with_days=False` skips the whole-horizon projection: the pre-commit safety
+    check asks only "would this break anything?", and paying for a strip nobody
+    is going to look at made a confirmation dialog feel like a page load.
+    """
     result = planning.simulate_for(current_user, extras or [])
     wallet = result.wallet
-    return {
+    payload = {
         "overall_budget": wallet.overall_budget,
         "overall_limit": wallet.overall_limit,
         "overall_remaining": wallet.overall_remaining,
@@ -563,19 +777,20 @@ def _wallet_payload(extras=None) -> dict:
             }
             for s in wallet.subjects
         ],
-        "days": [
-            {
-                "date": d.on_date.isoformat(),
-                "verdict": d.verdict.value,
-                "reason": d.reason,
-                "lectures": [
-                    {"code": l.code, "start": l.start_time.isoformat()}
-                    for l in d.lectures
-                ],
-            }
-            for d in planning.horizon_strip(current_user, wallet=wallet)
-        ],
     }
+
+    if with_days:
+        payload["days"] = [
+            _day_entry(d)
+            for d in planning.horizon_strip(current_user, wallet=wallet)
+        ]
+    if focus is not None:
+        # The page that raised this request is showing one day; sending its
+        # fresh plan back is what lets the hero repaint instead of reload.
+        payload["day"] = _day_entry(
+            planning.day_plan_on(current_user, focus, wallet=wallet)
+        )
+    return payload
 
 
 def _pct(value) -> float | None:

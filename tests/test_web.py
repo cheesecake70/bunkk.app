@@ -8,6 +8,7 @@ from datetime import date, time
 from pathlib import Path
 
 import pytest
+from conftest import google_sign_in
 from reportlab_stub import make_detailed_pdf
 
 from app import create_app, db
@@ -28,7 +29,7 @@ def app(tmp_path):
     below. Tests that need direct DB access push their own context.
     """
     app = create_app("config.TestConfig")
-    app.config.update(UPLOAD_DIR=str(tmp_path / "uploads"), WTF_CSRF_ENABLED=False)
+    app.config.update(UPLOAD_DIR=str(tmp_path / "uploads"))
     with app.app_context():
         db.create_all()
     yield app
@@ -42,12 +43,8 @@ def client(app):
     return app.test_client()
 
 
-def register(client, email="m@example.com", password="password123", username=None):
-    handle = username or re.sub(r"[^A-Za-z0-9_.]", "", email.split("@")[0]).ljust(3, "x")
-    return client.post("/register", data={
-        "email": email, "username": handle,
-        "password": password, "confirm_password": password,
-    }, follow_redirects=False)
+def register(client, email="m@example.com", username=None):
+    return google_sign_in(client, email, username)
 
 
 def upload(client, path=GOLDEN, filename="report.pdf"):
@@ -64,29 +61,26 @@ class TestAuth:
         assert resp.status_code == 302
         assert resp.headers["Location"].endswith("/upload")
 
-    def test_register_rejects_a_short_password(self, client):
-        resp = client.post("/register", data={"email": "a@b.com", "password": "short"})
-        assert resp.status_code == 400
-        assert b"at least 8 characters" in resp.data.lower()
+    def test_register_is_just_the_login_page(self, client):
+        resp = client.get("/register")
+        assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
 
-    def test_register_rejects_a_duplicate_email(self, client):
+    def test_login_page_offers_google_only(self, client):
+        html = client.get("/login").get_data(as_text=True)
+        assert "/login/google" in html
+        assert 'type="password"' not in html
+
+    def test_an_unverified_google_address_is_refused(self, client):
+        resp = google_sign_in(client, "m@example.com", verified=False)
+        assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
+        assert client.get("/settings").status_code == 302
+
+    def test_signing_in_again_lands_on_the_dashboard(self, client):
         register(client)
         client.post("/logout")
-        resp = client.post("/register", data={"email": "m@example.com", "password": "password123", "username": "muser", "confirm_password": "password123"})
-        assert resp.status_code == 400
-        assert b"already has an account" in resp.data
-
-    def test_login_with_a_wrong_password_fails(self, client):
-        register(client)
-        client.post("/logout")
-        resp = client.post("/login", data={"email": "m@example.com", "password": "nope12345"})
-        assert resp.status_code == 401
-
-    def test_login_then_dashboard(self, client):
-        register(client)
-        client.post("/logout")
-        resp = client.post("/login", data={"email": "m@example.com", "password": "password123"})
+        resp = register(client)
         assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/")
         assert client.get("/").status_code == 200
 
     @pytest.mark.parametrize("path", ["/upload", "/settings"])
@@ -104,7 +98,10 @@ class TestAuth:
         assert 'href="/login"' in body
 
     def test_upload_api_requires_a_session(self, client):
-        assert upload(client).status_code == 302
+        # JSON, not a redirect: fetch() can act on a 401, never on a login page.
+        resp = upload(client)
+        assert resp.status_code == 401
+        assert "sign in" in resp.get_json()["error"].lower()
 
 
 class TestUploadApi:
@@ -320,6 +317,18 @@ class TestPages:
         assert ds["verdict"] != "danger"     # 58.3% worst case now clears 50%
 
 
+    def test_the_phone_tab_bar_and_setup_sheet_are_there(self, loaded):
+        """The top nav wrapped into three rows on a phone; the four places
+        anyone goes now live in a bottom bar, with Setup as a sheet."""
+        html = loaded.get("/").get_data(as_text=True)
+        assert 'class="tabbar"' in html
+        assert 'id="setup-sheet"' in html
+
+    def test_signed_out_pages_have_no_tab_bar(self, client):
+        html = client.get("/login").get_data(as_text=True)
+        assert "tabbar" not in html
+
+
 class TestSettingsPageShape:
     @pytest.fixture()
     def loaded(self, client):
@@ -440,6 +449,28 @@ class TestUserIsolation:
         register(other, "second@example.com")
         assert other.get("/api/dashboard").get_json()["overall"]["limit"] == 75
 
+    def test_change_history_is_scoped_to_its_owner(self, app, client):
+        """`LectureChange` has no user_id of its own, so the scope has to come
+        from the lecture. Every caller happens to pass ids it fetched safely —
+        this asserts the function doesn't rely on that."""
+        from app.services import changes_for_lectures
+
+        register(client, "first@example.com")
+        upload(client)
+
+        with app.app_context():
+            owner = db.session.query(User).filter_by(email="first@example.com").one()
+            lecture_ids = [l.id for l in db.session.query(LectureInstance).all()]
+            assert lecture_ids
+
+            stranger = User(email="nobody@example.com", username="nobody",
+                            session_token="t-nobody")
+            db.session.add(stranger)
+            db.session.commit()
+
+            assert changes_for_lectures(owner, lecture_ids) is not None
+            assert changes_for_lectures(stranger, lecture_ids) == {}
+
 
 def test_users_table_stays_clean(app, client):
     register(client)
@@ -555,3 +586,183 @@ class TestPredictions:
         resp = other.put(f"/api/lectures/{lecture_id}/prediction",
                          json={"predicted": "P"})
         assert resp.status_code == 404
+
+
+class TestBulkPredictions:
+    """Fifty pending lectures, answered in one tap rather than fifty.
+
+    The per-lecture buttons were honest and unusable: a student two months into
+    term has forty-odd NU rows, each needing a click and a page reload.
+    """
+
+    @pytest.fixture()
+    def loaded(self, client):
+        register(client)
+        upload(client)
+        return client
+
+    def _pending(self, app, subject_id=None):
+        with app.app_context():
+            from app.services import UNKNOWN_STATUSES
+
+            query = (
+                db.session.query(LectureInstance)
+                .filter(LectureInstance.status.in_(UNKNOWN_STATUSES))
+                .filter_by(is_vanished=False)
+            )
+            if subject_id is not None:
+                query = query.filter_by(subject_id=subject_id)
+            return [row.id for row in query.all()]
+
+    def test_one_tap_answers_every_pending_lecture_of_a_subject(self, loaded, app):
+        before = loaded.get("/api/dashboard").get_json()
+        subject = max(before["subjects"], key=lambda s: s["pending"])
+        pending = len(self._pending(app, subject["id"]))
+
+        resp = loaded.post(f"/api/subjects/{subject['id']}/predictions",
+                           json={"predicted": "P"})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["changed"] == pending
+
+        after = next(s for s in body["stats"]["subjects"] if s["id"] == subject["id"])
+        assert after["pending"] == 0
+        assert after["worst_pct"] > subject["worst_pct"]
+        assert after["guessed"] == pending
+
+    def test_the_answer_carries_the_recomputed_figures(self, loaded, app):
+        """The per-request memo caches counts, so a response built after the
+        write without dropping it would hand back the numbers from before it."""
+        before = loaded.get("/api/dashboard").get_json()["overall"]["worst_pct"]
+        body = loaded.post("/api/predictions/bulk", json={"predicted": "P"}).get_json()
+
+        assert body["stats"]["overall"]["worst_pct"] > before
+        assert body["stats"]["overall"]["worst_pct"] == \
+            loaded.get("/api/dashboard").get_json()["overall"]["worst_pct"]
+
+    def test_the_global_form_covers_every_subject(self, loaded, app):
+        body = loaded.post("/api/predictions/bulk", json={"predicted": "P"}).get_json()
+        assert body["changed"] == len(self._pending(app))
+        assert all(s["pending"] == 0 for s in body["stats"]["subjects"])
+
+    def test_clearing_restores_the_untouched_worst_case(self, loaded):
+        before = loaded.get("/api/dashboard").get_json()["overall"]["worst_pct"]
+        loaded.post("/api/predictions/bulk", json={"predicted": "P"})
+        loaded.post("/api/predictions/bulk", json={"predicted": None})
+
+        assert loaded.get("/api/dashboard").get_json()["overall"]["worst_pct"] == before
+
+    def test_undo_puts_every_guess_back_as_it_was(self, loaded, app):
+        """The previous map is what makes a bulk action reversible in one step."""
+        first = self._pending(app)[0]
+        loaded.put(f"/api/lectures/{first}/prediction", json={"predicted": "A"})
+        mixed = loaded.get("/api/dashboard").get_json()["overall"]
+
+        body = loaded.post("/api/predictions/bulk", json={"predicted": "P"}).get_json()
+        assert body["previous"][str(first)] == "A"
+
+        loaded.post("/api/predictions/bulk", json={"lectures": body["previous"]})
+        restored = loaded.get("/api/dashboard").get_json()["overall"]
+        assert restored["worst_pct"] == mixed["worst_pct"]
+        assert restored["can_miss"] == mixed["can_miss"]
+
+    def test_a_marked_lecture_is_never_overwritten(self, loaded, app):
+        """A guess must never sit on top of something the college has said."""
+        with app.app_context():
+            marked = (
+                db.session.query(LectureInstance)
+                .filter(LectureInstance.status == "P")
+                .first()
+            )
+            marked_id = marked.id
+
+        loaded.post("/api/predictions/bulk", json={"predicted": "A"})
+        with app.app_context():
+            from app.models import LecturePrediction
+
+            assert db.session.query(LecturePrediction).filter_by(
+                lecture_id=marked_id).count() == 0
+
+    def test_a_vanished_lecture_is_left_alone(self, loaded, app):
+        with app.app_context():
+            from app.services import UNKNOWN_STATUSES
+
+            row = (
+                db.session.query(LectureInstance)
+                .filter(LectureInstance.status.in_(UNKNOWN_STATUSES))
+                .first()
+            )
+            row.is_vanished = True
+            db.session.commit()
+            vanished_id = row.id
+
+        loaded.post("/api/predictions/bulk", json={"predicted": "P"})
+        with app.app_context():
+            from app.models import LecturePrediction
+
+            assert db.session.query(LecturePrediction).filter_by(
+                lecture_id=vanished_id).count() == 0
+
+    def test_another_users_subject_is_not_found(self, loaded, app):
+        with app.app_context():
+            subject_id = db.session.query(Subject).first().id
+
+        other = app.test_client()
+        register(other, "second@example.com")
+        resp = other.post(f"/api/subjects/{subject_id}/predictions",
+                          json={"predicted": "P"})
+        assert resp.status_code == 404
+
+    def test_only_what_actually_moved_is_counted(self, loaded):
+        """The count drives the wording and the "nothing to do" path, so it has
+        to mean changes rather than lectures in scope — otherwise Clear on a
+        subject with no guesses cheerfully reports fifty cleared."""
+        first = loaded.post("/api/predictions/bulk", json={"predicted": "P"}).get_json()
+        assert first["changed"] > 0
+
+        again = loaded.post("/api/predictions/bulk", json={"predicted": "P"}).get_json()
+        assert again["changed"] == 0
+        assert again["previous"] == {}
+
+        cleared = loaded.post("/api/predictions/bulk", json={"predicted": None}).get_json()
+        assert cleared["changed"] == first["changed"]
+        assert loaded.post("/api/predictions/bulk",
+                           json={"predicted": None}).get_json()["changed"] == 0
+
+    def test_a_nonsense_value_is_refused(self, loaded):
+        assert loaded.post("/api/predictions/bulk",
+                           json={"predicted": "maybe"}).status_code == 400
+        assert loaded.post("/api/predictions/bulk",
+                           json={"lectures": "nope"}).status_code == 400
+
+
+class TestPercentageMovesOverHttp:
+    """`_apply` reads each subject's percentage before ingesting and again
+    after, inside one request. Anything cached for the life of that request has
+    to be dropped across the write, or both readings are the same number and
+    the upload page reports that nothing moved.
+
+    Asserted over HTTP on purpose: called directly there is no request context,
+    so the caches are inert and a broken one still looks fine.
+    """
+
+    def _report(self, tmp_path, name, statuses):
+        path = tmp_path / name
+        make_detailed_pdf(path, [
+            ("CN", date(2026, 7, 16 + i), time(9, 0), time(10, 0), status)
+            for i, status in enumerate(statuses)
+        ])
+        return path
+
+    def test_a_resolved_pending_lecture_moves_the_number(self, client, tmp_path):
+        register(client)
+        first = self._report(tmp_path, "a.pdf", ["NU", "P"])
+        second = self._report(tmp_path, "b.pdf", ["P", "P"])
+
+        upload(client, first, "a.pdf")
+        body = upload(client, second, "b.pdf").get_json()
+
+        assert body["status"] == "merged"
+        # 1-of-2 worst case becomes 2-of-2. Same number twice would mean the
+        # "before" reading survived the merge.
+        assert body["pct_moves"]["Cn"] == [50.0, 100.0]

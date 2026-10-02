@@ -13,6 +13,7 @@
 
 <div class="card {% if not semester_end %}card--yellow{% endif %}" style="margin-bottom:var(--sp-5)">
   <form method="post" action="{{ url_for('core.set_end_date') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field" style="margin-bottom:var(--sp-3)">
       <label for="end_date">Semester end date</label>
       <input class="input input--mono" id="end_date" name="end_date" type="date"
@@ -56,6 +57,31 @@
 </div>
 
 <p class="text-muted" style="font-size:var(--text-sm);margin-top:0" id="cal-hint"></p>
+
+{# A mid-sem break is a week, and tapping seven days one at a time is the kind
+   of chore that gets abandoned halfway — leaving a calendar that is wrong in a
+   way nothing on screen would reveal. Only shown in holiday mode. #}
+<div class="card card--yellow" id="cal-range" hidden style="margin-bottom:var(--sp-4)">
+  <div class="row" style="align-items:flex-end;gap:var(--sp-3)">
+    <div class="field" style="margin:0">
+      <label for="range-from">Mark off from</label>
+      <input class="input input--mono" id="range-from" type="date"
+             min="{{ today.isoformat() }}"
+             {% if semester_end %}max="{{ semester_end.isoformat() }}"{% endif %}>
+    </div>
+    <div class="field" style="margin:0">
+      <label for="range-to">to</label>
+      <input class="input input--mono" id="range-to" type="date"
+             min="{{ today.isoformat() }}"
+             {% if semester_end %}max="{{ semester_end.isoformat() }}"{% endif %}>
+    </div>
+    <div class="field" style="margin:0;flex:1">
+      <label for="range-name">Name <span class="text-muted">(optional)</span></label>
+      <input class="input" id="range-name" maxlength="120" placeholder="Diwali break">
+    </div>
+    <button class="btn btn--primary" type="button" id="range-save">Mark these off</button>
+  </div>
+</div>
 
 {% for month in months %}
 <div class="card" style="margin-bottom:var(--sp-4)">

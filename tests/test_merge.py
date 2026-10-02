@@ -48,17 +48,16 @@ def app(tmp_path):
 @pytest.fixture()
 def user(app):
     user = User(email="m@example.com", username="mokssha")
-    user.set_password("x")
     db.session.add(user)
     db.session.commit()
     return user
 
 
-def header(start=date(2026, 7, 1), end=date(2026, 8, 12), number="60004250098"):
+def header(start=date(2026, 7, 1), end=date(2026, 8, 12), number="60000000001"):
     return ReportHeader(
-        student_name="MOKSSHA NANDU",
+        student_name="SOHAM NONDA",
         student_number=number,
-        roll_no="C101",
+        roll_no="C000",
         academic_session="2026-2027, Semester III",
         program="B.Tech in Computer Engineering",
         period_start=start,
@@ -157,7 +156,6 @@ class TestRealPdfEndToEnd:
 
     def test_rejects_another_students_report(self, app):
         other = User(email="other@example.com", username="other", student_number="99999999999")
-        other.set_password("x")
         db.session.add(other)
         db.session.commit()
 
@@ -168,8 +166,8 @@ class TestRealPdfEndToEnd:
 
     def test_first_upload_adopts_the_identity_on_the_report(self, user):
         ingest(user, GOLDEN.read_bytes(), "report.pdf")
-        assert user.student_number == "60004250098"
-        assert user.roll_no == "C101"
+        assert user.student_number == "60000000001"
+        assert user.roll_no == "C000"
 
 
 class TestRule1StatusChanges:

@@ -61,11 +61,16 @@ STATUS_TONE = {
 #: templates because the labels lived in three places — the Today hero, the day
 #: strip and plan.js — and had already drifted: the same verdict read "GO" in
 #: one and "Must go" in another.
+#: Column headings for every grid in the app, in the order Python's weekday()
+#: numbers them.
+WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
 VERDICT_WORDS = {
     "skip": "Skip",
     "partial": "Part skip",
     "go": "Can't skip",
     "off": "No class",
+    "planned": "Planned",
 }
 
 
@@ -98,3 +103,4 @@ def register(app) -> None:
     # The strip repaints itself after a plan changes, so the client needs the
     # same labels the server rendered. Exposed as data rather than duplicated.
     app.jinja_env.globals["VERDICT_WORDS"] = VERDICT_WORDS
+    app.jinja_env.globals["WEEKDAYS"] = WEEKDAYS
