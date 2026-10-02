@@ -77,12 +77,9 @@
      all been guessed must not still be badged "9 pending". */
   function badge(subject, plan) {
     var verdict = plan ? plan.verdict : subject.verdict;
-    var headroom = plan ? plan.budget : subject.can_miss;
 
     if (verdict === "safe") return ["safe", "Safe"];
-    if (verdict === "warn") {
-      return ["warn", headroom === 0 ? "No slack yet" : "Tight"];
-    }
+    if (verdict === "warn") return ["warn", "Tight"];
     if (subject.pending_dominated) {
       return ["pending", subject.pending + " pending"];
     }
