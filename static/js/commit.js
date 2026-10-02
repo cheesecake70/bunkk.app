@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  var esc = window.BunkrHtml.esc;
+  var esc = window.BunkkHtml.esc;
 
   /* What the page was already breaking when it rendered. Pages seed this; a
      commit that changes nothing about that set is not worth a dialog. */
@@ -94,7 +94,7 @@
   function guard(absences) {
     if (!absences || !absences.length) return Promise.resolve(true);
 
-    return window.BunkrApi
+    return window.BunkkApi
       .post("/api/simulate", { absences: absences, light: true })
       .then(function (res) {
         /* A failed check must not block a commit: the server validates the
@@ -119,12 +119,12 @@
     var codes = newBreaks(payload);
     observe(payload);
     if (!codes.length) return false;
-    window.BunkrToast.show("Planned — this breaks " + sentence(codes) + ".",
+    window.BunkkToast.show("Planned — this breaks " + sentence(codes) + ".",
                            { onUndo: options && options.onUndo, tone: "danger" });
     return true;
   }
 
-  window.BunkrCommit = {
+  window.BunkkCommit = {
     observe: observe,
     newBreaks: newBreaks,
     guard: guard,

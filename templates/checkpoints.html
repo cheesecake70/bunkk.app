@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Checkpoints · Bunkr{% endblock %}
+{% block title %}Checkpoints · Bunkk{% endblock %}
 
 {% block content %}
 <div class="page-head">
@@ -7,7 +7,7 @@
   <h1>Checkpoints</h1>
   <p class="page-head__sub">
     Most colleges audit attendance before each exam, not at the end of term. Add
-    those dates and Bunkr plans to the next one instead of to the semester end —
+    those dates and Bunkk plans to the next one instead of to the semester end —
     which is the only honest answer, because lectures after an audit can't help
     you clear it.
   </p>
@@ -17,7 +17,7 @@
 <div class="banner banner--info" style="margin-bottom:var(--sp-5)">
   <div class="banner__body">
     <div class="banner__title">Set your semester end date first</div>
-    <div class="banner__text">Checkpoints sit inside the semester, so Bunkr needs to know where it ends.</div>
+    <div class="banner__text">Checkpoints sit inside the semester, so Bunkk needs to know where it ends.</div>
   </div>
   <a class="btn btn--sm" href="{{ url_for('core.calendar') }}">Set it</a>
 </div>
@@ -50,7 +50,7 @@
 
   {% if not checkpoints %}
     <p class="text-muted" style="font-size:var(--text-sm)">
-      No checkpoints yet — Bunkr is planning all the way to the semester end.
+      No checkpoints yet — Bunkk is planning all the way to the semester end.
     </p>
   {% endif %}
 

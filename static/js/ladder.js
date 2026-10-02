@@ -11,7 +11,7 @@
 (function () {
   "use strict";
 
-  var esc = window.BunkrHtml.esc;
+  var esc = window.BunkkHtml.esc;
 
   function note(rung, under, data) {
     if (under) {
@@ -60,7 +60,7 @@
          Mon 7 Sep" is the thing you can hold against a calendar. */
       var through = rung.through_date
         ? '<div class="ladder__through mono">through ' +
-          esc(window.BunkrFmt.date(rung.through_date)) + "</div>"
+          esc(window.BunkkFmt.date(rung.through_date)) + "</div>"
         : "";
       html += '<div class="ladder__rung ladder__rung--' + tone + '">' +
         '<div class="ladder__n num">' + rung.n + '</div>' +
@@ -94,12 +94,12 @@
      toggle closed rather than opening onto an error it already reported. */
   function load(host, subjectId, options) {
     host.innerHTML = '<p class="text-muted">Working it out…</p>';
-    return window.BunkrApi
+    return window.BunkkApi
       .get("/api/subjects/" + subjectId + "/skip-ladder")
       .then(function (res) {
         if (!res.ok) {
           host.innerHTML = "";
-          window.BunkrToast.error(res.body.error || "Couldn't work that out.");
+          window.BunkkToast.error(res.body.error || "Couldn't work that out.");
           return false;
         }
         render(host, res.body, options);
@@ -107,5 +107,5 @@
       });
   }
 
-  window.BunkrLadder = { render: render, load: load };
+  window.BunkkLadder = { render: render, load: load };
 })();

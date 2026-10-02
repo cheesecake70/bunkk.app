@@ -1,4 +1,4 @@
-"""Multiple accounts on one Bunkr.
+"""Multiple accounts on one Bunkk.
 
 Isolation was asserted from Phase 1, so the new ground here is everything that
 only becomes a question with a second person: who may create an account, whose

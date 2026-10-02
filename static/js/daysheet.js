@@ -25,8 +25,8 @@
     var openDate = null;
     var dirty = false;
 
-    var esc = window.BunkrHtml.esc;
-    var attr = window.BunkrHtml.attr;
+    var esc = window.BunkkHtml.esc;
+    var attr = window.BunkkHtml.attr;
 
     function cellFor(date) {
       return document.querySelector(cellSelector + '[data-date="' + date + '"]');
@@ -78,16 +78,16 @@
       if (!pending.length) return;
 
       button.disabled = true;
-      window.BunkrCommit.guard(pending.map(function (item) {
+      window.BunkkCommit.guard(pending.map(function (item) {
         return { date: openDate, subject_id: item.subject_id, start: item.start };
       })).then(function (go) {
         if (!go) { button.disabled = false; return; }
-        return window.BunkrApi
+        return window.BunkkApi
         .post("/api/absences/batch", { date: openDate, lectures: pending })
         .then(function (res) {
           button.disabled = false;
           if (!res.ok) {
-            window.BunkrToast.error(res.body.error || "Couldn't save that.");
+            window.BunkkToast.error(res.body.error || "Couldn't save that.");
             return;
           }
 
@@ -112,7 +112,7 @@
               return chain.then(function () {
                 var box = boxFor(item);
                 if (!box || !box.checked || !box.dataset.absence) return;
-                return window.BunkrApi
+                return window.BunkkApi
                   .del("/api/absences/" + box.dataset.absence)
                   .then(function (res) {
                     if (!res.ok) return;
@@ -129,10 +129,10 @@
             });
           };
 
-          if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
-            window.BunkrToast.show(
+          if (!window.BunkkCommit.report(res.body, { onUndo: undo })) {
+            window.BunkkToast.show(
               "Planned to miss " + pending.length + " on " +
-              window.BunkrFmt.date(openDate),
+              window.BunkkFmt.date(openDate),
               { onUndo: undo }
             );
           }
@@ -146,7 +146,7 @@
     function paintVerdict(day) {
       var host = document.getElementById("sheet-verdict");
       if (!host || !day) return;
-      var words = window.BUNKR_VERDICTS || {};
+      var words = window.BUNKK_VERDICTS || {};
       host.className = "sheet-verdict verdict--" + day.verdict +
         (day.over_budget ? " is-over" : "");
       host.innerHTML =
@@ -155,7 +155,7 @@
     }
 
     function render(data) {
-      title.textContent = data.label || window.BunkrFmt.longDate(data.date);
+      title.textContent = data.label || window.BunkkFmt.longDate(data.date);
 
       if (data.holiday) {
         body.innerHTML =
@@ -268,7 +268,7 @@
       title.textContent = label || date;
       body.innerHTML = '<p class="text-muted">Loading…</p>';
       sheet.showModal();
-      window.BunkrApi.get("/api/day/" + date).then(function (res) {
+      window.BunkkApi.get("/api/day/" + date).then(function (res) {
         if (!res.ok) {
           body.innerHTML = '<p class="text-danger">' +
             esc(res.body.error || "Couldn't load that day.") + "</p>";
@@ -316,7 +316,7 @@
 
       // Unticking gives budget back, so only a new commitment is checked.
       var ready = box.checked
-        ? window.BunkrCommit.guard([payload])
+        ? window.BunkkCommit.guard([payload])
         : Promise.resolve(true);
 
       ready.then(function (go) {
@@ -327,14 +327,14 @@
         }
 
         var request = box.checked
-          ? window.BunkrApi.post("/api/absences", payload)
-          : window.BunkrApi.del("/api/absences/" + box.dataset.absence);
+          ? window.BunkkApi.post("/api/absences", payload)
+          : window.BunkkApi.del("/api/absences/" + box.dataset.absence);
 
         return request.then(function (res) {
           box.disabled = false;
           if (!res.ok) {
             box.checked = !box.checked;        // the server said no; show that
-            window.BunkrToast.error(res.body.error || "Couldn't save that.");
+            window.BunkkToast.error(res.body.error || "Couldn't save that.");
             return;
           }
 
@@ -355,9 +355,9 @@
             box.checked = !box.checked;
             box.dispatchEvent(new Event("change", { bubbles: true }));
           };
-          var when = window.BunkrFmt.date(openDate);
-          if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
-            window.BunkrToast.show(
+          var when = window.BunkkFmt.date(openDate);
+          if (!window.BunkkCommit.report(res.body, { onUndo: undo })) {
+            window.BunkkToast.show(
               box.checked
                 ? (whole ? "Planned to miss all of " + when
                          : "Planned to miss one class on " + when)
@@ -392,5 +392,5 @@
     return { open: open };
   }
 
-  window.BunkrDaySheet = { mount: mount };
+  window.BunkkDaySheet = { mount: mount };
 })();

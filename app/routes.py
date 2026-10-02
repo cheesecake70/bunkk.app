@@ -39,7 +39,7 @@ bp = Blueprint("core", __name__)
 
 @bp.get("/healthz")
 def healthz():
-    return jsonify(status="ok", app="bunkr")
+    return jsonify(status="ok", app="bunkk")
 
 
 def _week_around(focus: date, today: date) -> list[date]:

@@ -1,6 +1,6 @@
 /* Escaping, in one place.
 
-   Every list Bunkr builds on the client — the day sheet, the skip ladder — is
+   Every list Bunkk builds on the client — the day sheet, the skip ladder — is
    assembled as an HTML string, and every one of them interpolates something a
    user typed: a subject's short code, a holiday's name. Each file grew its own
    escape helper, or forgot one, and the ones that forgot were the ones that
@@ -32,5 +32,5 @@
     return esc(value).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  window.BunkrHtml = { esc: esc, attr: attr };
+  window.BunkkHtml = { esc: esc, attr: attr };
 })();

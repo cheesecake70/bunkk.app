@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings · Bunkr{% endblock %}
+{% block title %}Settings · Bunkk{% endblock %}
 
 {% block content %}
 <div class="page-head">
@@ -18,7 +18,7 @@
         <label for="username">Username</label>
         <input class="input" id="username" name="username"
                value="{{ current_user.username }}" required>
-        <div class="field__hint">Letters, numbers, dots or underscores. How you're known in Bunkr; you sign in with Google.</div>
+        <div class="field__hint">Letters, numbers, dots or underscores. How you're known in Bunkk; you sign in with Google.</div>
       </div>
       <div class="row" style="margin-bottom:var(--sp-4)">
         <span class="badge badge--neutral">{{ current_user.email }}</span>
@@ -117,7 +117,7 @@
     <h3>Delete this account</h3>
     <p style="font-size:var(--text-sm);margin-top:0">
       Removes your ledger, your uploaded PDFs and your settings. This can't be
-      undone, and Bunkr keeps no backup of your account once it's gone.
+      undone, and Bunkk keeps no backup of your account once it's gone.
     </p>
     <form method="post" action="{{ url_for('account.delete') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

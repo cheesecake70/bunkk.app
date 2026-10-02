@@ -39,7 +39,7 @@ class CoverageReport:
     is_stale: bool
     pending_count: int
     oldest_pending: date | None
-    #: The single range that fixes everything: semester start → today. Bunkr
+    #: The single range that fixes everything: semester start → today. Bunkk
     #: only ever asks for one habit, so every problem has the same one-tap answer.
     suggested_export: DateRange | None
 

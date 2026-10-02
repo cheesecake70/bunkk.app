@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<title>{% block title %}Bunkr{% endblock %}</title>
+<title>{% block title %}Bunkk{% endblock %}</title>
 <meta name="theme-color" content="#F4D738">
 <meta name="description" content="Know in ten seconds whether you can skip college today.">
 <link rel="icon" href="{{ url_for('static', filename='icons/favicon-32.png') }}" sizes="32x32">
@@ -22,7 +22,7 @@
                       'core.add_checkpoint', 'core.subjects', 'core.settings') %}
 {% if current_user.is_authenticated %}
 <nav class="nav">
-  <a href="{{ url_for('core.dashboard') }}" class="nav__logo" style="text-decoration:none">BUNKR</a>
+  <a href="{{ url_for('core.dashboard') }}" class="nav__logo" style="text-decoration:none">BUNKK</a>
   <div class="nav__links">
     <a class="nav__link {% if request.endpoint == 'core.dashboard' %}is-active{% endif %}"
        href="{{ url_for('core.dashboard') }}">Today</a>
@@ -140,12 +140,12 @@
 <script src="{{ url_for('static', filename='js/api.js') }}"></script>
 <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
 {% if current_user.is_authenticated %}
-  <script>window.BUNKR_VERDICTS = {{ VERDICT_WORDS|tojson }};</script>
+  <script>window.BUNKK_VERDICTS = {{ VERDICT_WORDS|tojson }};</script>
   <script src="{{ url_for('static', filename='js/commit.js') }}"></script>
   {% if result %}
     {# What the plan already breaks, so the commit guard can tell a new problem
        from one that was on screen when the page loaded. #}
-    <script>window.BunkrCommit.observe({{
+    <script>window.BunkkCommit.observe({{
       {"is_safe": result.is_safe, "breaks": result.breaks,
        "overall_breaks": result.overall_breaks}|tojson }});</script>
   {% endif %}

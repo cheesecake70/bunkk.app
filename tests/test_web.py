@@ -93,7 +93,7 @@ class TestAuth:
         resp = client.get("/")
         assert resp.status_code == 200
         body = resp.get_data(as_text=True)
-        assert "BUNKR" in body
+        assert "BUNKK" in body
         assert 'href="/register"' in body
         assert 'href="/login"' in body
 

@@ -185,7 +185,7 @@ def ingest_report(
             raise MergeError("That upload clashed with another; try again.")
         raise IdentityClaimed(
             f"Student {report.header.student_number} is already set up on "
-            "another Bunkr account. If that's you, sign in as that account "
+            "another Bunkk account. If that's you, sign in as that account "
             "instead of uploading the report here.",
             username=claimed.username, email=claimed.email,
             student_number=report.header.student_number,
@@ -306,7 +306,7 @@ def _check_identity(user: User, report: ParsedReport) -> None:
         if claimed is not None:
             raise IdentityClaimed(
                 f"Student {header.student_number} is already set up on another "
-                "Bunkr account. If that's you, sign in as that account "
+                "Bunkk account. If that's you, sign in as that account "
                 "instead of uploading the report here.",
                 username=claimed.username,
                 email=claimed.email,

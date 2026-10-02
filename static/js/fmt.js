@@ -42,5 +42,5 @@
     return String(value || "").slice(0, 5);
   }
 
-  window.BunkrFmt = { date: date, longDate: longDate, time: time, parse: parse };
+  window.BunkkFmt = { date: date, longDate: longDate, time: time, parse: parse };
 })();

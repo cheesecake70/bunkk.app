@@ -185,7 +185,7 @@ def calendar_day():
         return jsonify(error="Bad date."), 400
 
     if on_date < date.today():
-        return jsonify(error="Bunkr only plans forwards — past days can't change."), 400
+        return jsonify(error="Bunkk only plans forwards — past days can't change."), 400
 
     kind = payload.get("kind")
     if kind not in (None, "holiday"):
@@ -217,7 +217,7 @@ def calendar_range():
     if to < frm:
         return jsonify(error="That range ends before it starts."), 400
     if frm < date.today():
-        return jsonify(error="Bunkr only plans forwards — past days can't change."), 400
+        return jsonify(error="Bunkk only plans forwards — past days can't change."), 400
     if (to - frm).days + 1 > MAX_RANGE_DAYS:
         return jsonify(error="That's longer than a semester — check the dates."), 400
 
