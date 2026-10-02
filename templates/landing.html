@@ -44,6 +44,7 @@
       <a class="lp-rail__seg" href="#lp-s3" data-seg="2"><span class="lp-rail__fill"></span><span class="lp-rail__lbl">Plan</span></a>
       <a class="lp-rail__seg" href="#lp-s4" data-seg="3"><span class="lp-rail__fill"></span><span class="lp-rail__lbl">Ladder</span></a>
       <a class="lp-rail__seg" href="#lp-s5" data-seg="4"><span class="lp-rail__fill"></span><span class="lp-rail__lbl">Setup</span></a>
+      <a class="lp-rail__seg" href="#lp-s6" data-seg="5"><span class="lp-rail__fill"></span><span class="lp-rail__lbl">Checkpoints</span></a>
     </nav>
     <span class="lp-bar__spacer"></span>
     <a class="btn btn--sm btn--ghost lp-bar__signin" href="{{ url_for('auth.login') }}">Sign in</a>
@@ -65,9 +66,9 @@
     <p class="lp-hero__line">Know in ten seconds whether you can skip college today.</p>
     <div class="lp-hero__cta">
       <a class="btn btn--primary btn--lg lp-go" href="{{ url_for('auth.register') }}">Try Now <span class="lp-go__arrow" aria-hidden="true">&rarr;</span></a>
-      <a class="btn btn--lg" href="#how">See how it works</a>
+      <a class="btn btn--lg" href="#story">See how it works</a>
     </div>
-    <p class="lp-hero__fine mono">Runs on the detailed attendance PDF from your college portal.</p>
+    <p class="lp-hero__fine mono">Runs on the detailed PDF from your SVKM attendance portal.</p>
     <p class="lp-cue mono" aria-hidden="true"><span>Scroll</span><span class="lp-cue__arrow">&darr;</span></p>
   </div>
 
@@ -109,33 +110,24 @@
 </section>
 
 {# ======================================================================
-   INTRO to the story
-   ====================================================================== #}
-<section class="lp-intro" id="how" aria-labelledby="lp-how">
-  <p class="eyebrow">How it works</p>
-  <h2 id="lp-how" class="lp-intro__title" data-lp-reveal>This is the actual app.</h2>
-  <p class="lp-intro__sub" data-lp-reveal>Real screens, made-up numbers. Five things it does, in the order you'd use them.</p>
-</section>
-
-{# ======================================================================
    THE STORY. One scene per screen. In sticky mode (JS, wide screens) the
    scenes stack in one pinned stage and scrolling drives them; everywhere
-   else they are just five rows, each readable on its own.
+   else they are just six rows, each readable on its own.
    ====================================================================== #}
-<section class="lp-story" id="story" aria-label="What BUNKK does" style="--lp-n:5">
+<section class="lp-story" id="story" aria-label="What BUNKK does" style="--lp-n:6">
   <div class="lp-stage" data-scene="1">
     <div class="lp-scenes">
       <div class="lp-stage__block" aria-hidden="true"></div>
       <div class="lp-counter" aria-hidden="true">
-        <span class="lp-counter__win"><span class="lp-counter__roll mono"><i>01</i><i>02</i><i>03</i><i>04</i><i>05</i></span></span>
-        <span class="lp-counter__of mono">/ 05</span>
+        <span class="lp-counter__win"><span class="lp-counter__roll mono"><i>01</i><i>02</i><i>03</i><i>04</i><i>05</i><i>06</i></span></span>
+        <span class="lp-counter__of mono">/ 06</span>
       </div>
 
       {# ---------- 01 Today ---------- #}
       <article class="lp-scene" data-scene="1" aria-labelledby="lp-s1">
         <div class="lp-scene__copy">
           <div class="lp-scene__copyin">
-            <p class="eyebrow"><span class="mono">01 / 05</span> &middot; Today</p>
+            <p class="eyebrow"><span class="mono">01 / 06</span> &middot; Today</p>
             <h2 id="lp-s1">Can I skip today?</h2>
             <p>One word at the top: skip, part skip or can't skip. Under it, the classes that day and how many each subject can still spare. Mark one as skipped and every budget updates.</p>
             <p class="lp-hint mono">Go on, press Skip this.</p>
@@ -204,9 +196,9 @@
       <article class="lp-scene" data-scene="2" aria-labelledby="lp-s2">
         <div class="lp-scene__copy">
           <div class="lp-scene__copyin">
-            <p class="eyebrow"><span class="mono">02 / 05</span> &middot; Budget</p>
+            <p class="eyebrow"><span class="mono">02 / 06</span> &middot; Budget</p>
             <h2 id="lp-s2">The budget behind the verdict</h2>
-            <p>Lectures the college hasn't marked yet count as absent. So when BUNKK says safe, it's safe even if every pending one goes wrong. The official number and the best case sit right next to it.</p>
+            <p>Not updated (NU) lectures count as absent. So when BUNKK says safe, it's safe even if every pending one goes wrong. The official number and the best case sit right next to it.</p>
           </div>
         </div>
         <div class="lp-frame" aria-hidden="true">
@@ -255,46 +247,83 @@
       <article class="lp-scene" data-scene="3" aria-labelledby="lp-s3">
         <div class="lp-scene__copy">
           <div class="lp-scene__copyin">
-            <p class="eyebrow"><span class="mono">03 / 05</span> &middot; Plan</p>
+            <p class="eyebrow"><span class="mono">03 / 06</span> &middot; Plan</p>
             <h2 id="lp-s3">Plan the whole semester</h2>
             <p>Every remaining day gets a verdict. Pick one, tick the classes you plan to miss, or take the half day BUNKK suggests. The budget shrinks as you plan, so you can see the cost before you commit.</p>
+            <p class="lp-hint mono">Go on, click a day.</p>
           </div>
         </div>
-        <div class="lp-frame" aria-hidden="true">
+        {# You can press this one too: the same month grid and day sheet as the
+           real plan page, driven by a small made-up timetable in landing.js. #}
+        <div class="lp-frame" role="group" aria-label="Interactive example of the Plan screen, with example data">
           <div class="lp-frame__inner">
             <div class="lp-frame__bar">
-              <span class="lp-frame__dots"><i></i><i></i><i></i></span>
-              <span class="lp-frame__url mono">/plan</span>
+              <span class="lp-frame__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="lp-frame__url mono" aria-hidden="true">/plan</span>
               <span class="lp-frame__eg mono">Example data</span>
             </div>
             <div class="lp-pane lp-pane--plan">
-              <h3 class="strip-month">October</h3>
-              <div class="day-strip lp-strip">
-                <button type="button" tabindex="-1" class="verdict verdict--skip verdict--today" style="--i:0"><div class="verdict__dow">Wed</div><div class="verdict__date mono">14</div><span class="verdict__tag">Skip</span></button>
-                <button type="button" tabindex="-1" class="verdict verdict--partial lp-pick is-planned" style="--i:1"><div class="verdict__dow">Thu</div><div class="verdict__date mono">15</div><span class="verdict__tag">Part skip</span><span class="verdict__count mono">3</span></button>
-                <button type="button" tabindex="-1" class="verdict verdict--go" style="--i:2"><div class="verdict__dow">Fri</div><div class="verdict__date mono">16</div><span class="verdict__tag">Can't skip</span></button>
-                <button type="button" tabindex="-1" class="verdict verdict--off" style="--i:3" disabled><div class="verdict__dow">Sat</div><div class="verdict__date mono">17</div><span class="verdict__tag">No class</span></button>
-                <button type="button" tabindex="-1" class="verdict verdict--skip" style="--i:4"><div class="verdict__dow">Mon</div><div class="verdict__date mono">19</div><span class="verdict__tag">Skip</span></button>
-              </div>
-              <h2 class="section-title lp-sect">Committed absences</h2>
-              <div class="card lp-committed">
-                <p class="text-muted lp-committed__none">Nothing committed yet. Your whole budget is discretionary.</p>
-                <div class="lecture lp-committed__row">
-                  <span class="lecture__when">Thu 15 Oct &mdash; whole day</span>
-                  <span></span>
-                  <button class="btn btn--sm btn--danger" type="button" tabindex="-1">Remove</button>
+              <div class="card plan-month lp-month">
+                <div class="lp-month__head">
+                  <h3>October</h3>
+                  <div class="row plan-legend lp-legend" aria-hidden="true">
+                    <span class="badge badge--safe">Skip</span>
+                    <span class="badge badge--warn">Part skip</span>
+                    <span class="badge badge--danger">Can't skip</span>
+                    <span class="badge badge--pending">Planned</span>
+                  </div>
+                </div>
+                <div class="cal cal--5 lp-cal">
+                  <div class="cal__dow">Mon</div><div class="cal__dow">Tue</div><div class="cal__dow">Wed</div><div class="cal__dow">Thu</div><div class="cal__dow">Fri</div>
+                  <div class="cal__day is-out"><span class="mono">5</span></div>
+                  <div class="cal__day is-out"><span class="mono">6</span></div>
+                  <div class="cal__day is-out"><span class="mono">7</span></div>
+                  <div class="cal__day is-out"><span class="mono">8</span></div>
+                  <div class="cal__day is-out"><span class="mono">9</span></div>
+                  <div class="cal__day is-out"><span class="mono">12</span></div>
+                  <div class="cal__day is-out"><span class="mono">13</span></div>
+                  <button type="button" class="cal__day verdict--skip is-today js-day" data-day="14" data-wd="3" data-label="Wednesday 14 Oct"><span class="mono">14</span></button>
+                  <button type="button" class="cal__day verdict--planned js-day" data-day="15" data-wd="4" data-label="Thursday 15 Oct"><span class="mono">15</span><span class="cal__count mono">1</span></button>
+                  <button type="button" class="cal__day verdict--go js-day" data-day="16" data-wd="5" data-label="Friday 16 Oct"><span class="mono">16</span></button>
+                  <button type="button" class="cal__day verdict--skip js-day" data-day="19" data-wd="1" data-label="Monday 19 Oct"><span class="mono">19</span></button>
+                  <button type="button" class="cal__day verdict--partial js-day" data-day="20" data-wd="2" data-label="Tuesday 20 Oct"><span class="mono">20</span></button>
+                  <button type="button" class="cal__day verdict--skip js-day" data-day="21" data-wd="3" data-label="Wednesday 21 Oct"><span class="mono">21</span></button>
+                  <button type="button" class="cal__day verdict--partial js-day" data-day="22" data-wd="4" data-label="Thursday 22 Oct"><span class="mono">22</span></button>
+                  <button type="button" class="cal__day verdict--go js-day" data-day="23" data-wd="5" data-label="Friday 23 Oct"><span class="mono">23</span></button>
+                  <button type="button" class="cal__day verdict--skip js-day" data-day="26" data-wd="1" data-label="Monday 26 Oct"><span class="mono">26</span></button>
+                  <button type="button" class="cal__day verdict--partial js-day" data-day="27" data-wd="2" data-label="Tuesday 27 Oct"><span class="mono">27</span></button>
+                  <button type="button" class="cal__day verdict--skip js-day" data-day="28" data-wd="3" data-label="Wednesday 28 Oct"><span class="mono">28</span></button>
+                  <button type="button" class="cal__day verdict--partial js-day" data-day="29" data-wd="4" data-label="Thursday 29 Oct"><span class="mono">29</span></button>
+                  <button type="button" class="cal__day verdict--go js-day" data-day="30" data-wd="5" data-label="Friday 30 Oct"><span class="mono">30</span></button>
                 </div>
               </div>
 
-              <div class="modal lp-sheet">
-                <div class="modal__title">Thursday 15 Oct</div>
-                <label class="check" style="margin-bottom:var(--sp-3)">
-                  <input type="checkbox" tabindex="-1" disabled checked data-lp-check>
-                  <span>Miss the whole day</span>
-                </label>
-                <div class="sheet-partial">
-                  <div class="sheet-partial__note">Leave after 12:00 &mdash; skips CS201. 1h free.</div>
-                  <button class="btn btn--sm btn--primary" type="button" tabindex="-1">Leave after 12:00</button>
+              <h2 class="section-title lp-sect">Committed absences</h2>
+              <div class="card lp-committed" aria-live="polite">
+                <div class="lecture">
+                  <span class="lecture__when">Thu 15 Oct &mdash; CS201</span>
+                  <span></span>
+                  <button class="btn btn--sm btn--danger lp-drop" type="button" data-day="15" data-i="2">Remove</button>
+                </div>
+              </div>
+
+              <div class="modal lp-sheet is-open">
+                <div class="modal__title lp-sheet__title">Thursday 15 Oct</div>
+                <div class="lp-sheet__body">
+                  <div class="sheet-verdict verdict--planned"><b>Planned</b> <span class="text-muted">Missing 1 of 3 classes.</span></div>
+                  <label class="check" style="margin-bottom:var(--sp-3)">
+                    <input type="checkbox" class="lp-whole">
+                    <span>Miss the whole day</span>
+                  </label>
+                  <div class="stack lp-sheet__rows">
+                    <label class="lecture"><span><span class="mono">09:00&ndash;10:00</span> <strong style="margin-left:var(--sp-3)">EE110</strong> <span class="badge badge--safe">2 left</span></span><span class="check"><input type="checkbox"></span></label>
+                    <label class="lecture"><span><span class="mono">11:00&ndash;12:00</span> <strong style="margin-left:var(--sp-3)">MA102</strong> <span class="badge badge--danger">0 left</span></span><span class="check"><input type="checkbox"></span></label>
+                    <label class="lecture is-planned"><span><span class="mono">12:00&ndash;13:00</span> <strong style="margin-left:var(--sp-3)">CS201</strong> <span class="badge badge--safe">2 left</span></span><span class="check"><input type="checkbox" checked></span></label>
+                  </div>
+                </div>
+                <div class="row--between lp-sheet__foot">
+                  <span></span>
+                  <button class="btn btn--sm btn--primary lp-sheet__done" type="button">Done</button>
                 </div>
               </div>
             </div>
@@ -307,7 +336,7 @@
       <article class="lp-scene" data-scene="4" aria-labelledby="lp-s4">
         <div class="lp-scene__copy">
           <div class="lp-scene__copyin">
-            <p class="eyebrow"><span class="mono">04 / 05</span> &middot; Ladder</p>
+            <p class="eyebrow"><span class="mono">04 / 06</span> &middot; Ladder</p>
             <h2 id="lp-s4">Know exactly where it breaks</h2>
             <p>Pick a subject and see what skipping one more, two more, three more does to its percentage. You find the rung that crosses the line before you step on it.</p>
           </div>
@@ -344,7 +373,7 @@
       <article class="lp-scene" data-scene="5" aria-labelledby="lp-s5">
         <div class="lp-scene__copy">
           <div class="lp-scene__copyin">
-            <p class="eyebrow"><span class="mono">05 / 05</span> &middot; Setup</p>
+            <p class="eyebrow"><span class="mono">05 / 06</span> &middot; Setup</p>
             <h2 id="lp-s5">Setup is one PDF</h2>
             <p>Export the detailed attendance report from your portal and drop it in. BUNKK reads every lecture, then drafts your timetable from the pattern it finds. It has to be the detailed report; the summary one has no per-lecture rows.</p>
           </div>
@@ -419,6 +448,71 @@
         </div>
       </article>
 
+      {# ---------- 06 Checkpoints ---------- #}
+      <article class="lp-scene" data-scene="6" aria-labelledby="lp-s6">
+        <div class="lp-scene__copy">
+          <div class="lp-scene__copyin">
+            <p class="eyebrow"><span class="mono">06 / 06</span> &middot; Checkpoints</p>
+            <h2 id="lp-s6">Plan to the date that matters</h2>
+            <p>Add the dates your college actually audits, like a mid-sem. Count your budget till the next checkpoint instead of end of term.</p>
+            <p class="lp-hint mono">Go on, add one.</p>
+          </div>
+        </div>
+        {# Pressable, like scenes 1 and 3: the checkpoints page's own form and
+           list, with the budget it changes shown above them. #}
+        <div class="lp-frame" role="group" aria-label="Interactive example of the Checkpoints screen, with example data">
+          <div class="lp-frame__inner">
+            <div class="lp-frame__bar">
+              <span class="lp-frame__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="lp-frame__url mono" aria-hidden="true">/checkpoints</span>
+              <span class="lp-frame__eg mono">Example data</span>
+            </div>
+            <div class="lp-pane lp-pane--cp">
+              <div class="stat stat--safe lp-cp-stat" aria-live="polite">
+                <div class="stat__label">Can still miss</div>
+                <div class="stat__value num lp-cp-n">11</div>
+                <div class="stat__meta lp-cp-to">to Mid-sem audit, 12 Nov</div>
+              </div>
+
+              <form class="card lp-cp-form" novalidate>
+                <h3>Add a checkpoint</h3>
+                <div class="row lp-cp-fields">
+                  <div class="field">
+                    <label for="lp-cp-date">Date</label>
+                    <input class="input input--mono" id="lp-cp-date" type="date" required
+                           min="2026-10-15" max="2027-01-20">
+                  </div>
+                  <div class="field lp-cp-name">
+                    <label for="lp-cp-label">Name <span class="text-muted">(optional)</span></label>
+                    <input class="input" id="lp-cp-label" maxlength="120" placeholder="Mid-sem audit">
+                  </div>
+                  <button class="btn btn--primary btn--sm" type="submit">Add checkpoint</button>
+                </div>
+                <div class="field__error lp-cp-error" role="alert" hidden></div>
+              </form>
+
+              <div class="card lp-cp-listcard">
+                <h3>Your checkpoints</h3>
+                <div class="stack lp-cp-list">
+                  <div class="lecture">
+                    <div><span class="mono">12 Nov 2026</span><span style="margin-left:var(--sp-2)">Mid-sem audit</span></div>
+                    <div class="row" style="gap:var(--sp-2)"><span class="badge badge--warn">Planning to this one</span><button class="btn btn--sm btn--danger lp-cp-drop" type="button" data-date="2026-11-12">Remove</button></div>
+                  </div>
+                  <div class="lecture">
+                    <div><span class="mono">04 Dec 2026</span><span style="margin-left:var(--sp-2)">Lab viva</span></div>
+                    <div class="row" style="gap:var(--sp-2)"><span class="badge badge--neutral">Upcoming</span><button class="btn btn--sm btn--danger lp-cp-drop" type="button" data-date="2026-12-04">Remove</button></div>
+                  </div>
+                  <div class="lecture">
+                    <div><span class="mono">20 Jan 2027</span><span style="margin-left:var(--sp-2)">Semester end</span></div>
+                    <div class="row" style="gap:var(--sp-2)"><span class="badge badge--neutral">Always last</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
     </div>
   </div>
 </section>
@@ -428,28 +522,26 @@
    ====================================================================== #}
 <section class="lp-features" aria-labelledby="lp-feat">
   <p class="eyebrow">And the rest</p>
-  <h2 id="lp-feat" class="lp-features__title" data-lp-reveal>Small things that keep the numbers honest.</h2>
+  <h2 id="lp-feat" class="lp-features__title" data-lp-reveal>Because no semester goes exactly to plan.</h2>
 
   <div class="lp-grid">
 
     <div class="lp-rv" data-lp-reveal style="--rot:-1.2deg">
       <article class="card lp-card" data-lp-tilt>
-        <p class="eyebrow">Subjects</p>
-        <h3>Every subject, one row</h3>
-        <div class="lp-vig" aria-hidden="true">
-          <div class="table-wrap">
-            <table class="subjects">
-              <thead><tr><th>Subject</th><th class="cell-right">Now</th><th class="cell-right">Can miss</th><th>Status</th></tr></thead>
-              <tbody>
-                <tr><td class="subj-code">CS201</td><td class="cell-num">76.9%</td><td class="cell-num">3</td><td><span class="badge badge--safe">Safe</span></td></tr>
-                <tr><td class="subj-code">MA102</td><td class="cell-num">71.4%</td><td class="cell-num">1</td><td><span class="badge badge--warn">Tight</span></td></tr>
-                <tr><td class="subj-code">PH101</td><td class="cell-num">64.0%</td><td class="cell-num">0</td><td><span class="badge badge--danger">Attend 4</span></td></tr>
-                <tr><td class="subj-code">EE110</td><td class="cell-num">55.0%</td><td class="cell-num">0</td><td><span class="badge badge--pending">3 pending</span></td></tr>
-              </tbody>
-            </table>
+        <p class="eyebrow">Half days</p>
+        <h3>It finds half-day skips too</h3>
+        <div class="lp-vig stack lp-half" aria-hidden="true">
+          <div class="sheet-verdict verdict--partial"><b>Part skip</b> <span class="text-muted">Skip CS201; no room left in MA102.</span></div>
+          <div class="sheet-partial">
+            <div class="sheet-partial__note">Leave after 12:00 &mdash; skips CS201. 1h free.</div>
+            <span class="btn btn--sm btn--primary">Leave after 12:00</span>
+          </div>
+          <div class="sheet-partial">
+            <div class="sheet-partial__note">Arrive by 11:00 &mdash; skips EE110, PH105. 2h free.</div>
+            <span class="btn btn--sm btn--primary">Arrive by 11:00</span>
           </div>
         </div>
-        <p class="lp-card__text">Safe, tight, or how many in a row you need to attend to get back. Pending ones are called out, not hidden.</p>
+        <p class="lp-card__text">Sometimes you can't afford a full day off. Coming in late or leaving early can still fit the budget, and BUNKK tells you when it does.</p>
       </article>
     </div>
 
@@ -478,56 +570,52 @@
 
     <div class="lp-rv" data-lp-reveal style="--rot:1.2deg">
       <article class="card lp-card" data-lp-tilt>
-        <p class="eyebrow">Checkpoints</p>
-        <h3>Plan to the date that matters</h3>
+        <p class="eyebrow">Holidays</p>
+        <h3>Mark holidays, fix the count</h3>
         <div class="lp-vig" aria-hidden="true">
-          <div class="lp-list">
-            <div class="lecture">
-              <div><span class="mono">12 Nov</span> <span style="margin-left:var(--sp-2)">Mid-sem audit</span></div>
-              <div class="row" style="gap:var(--sp-2)"><span class="badge badge--warn">Planning to this one</span></div>
-            </div>
-            <div class="lecture">
-              <div><span class="mono">04 Dec</span> <span style="margin-left:var(--sp-2)">Lab viva</span></div>
-              <div class="row" style="gap:var(--sp-2)"><span class="badge badge--neutral">Upcoming</span></div>
-            </div>
-            <div class="lecture">
-              <div><span class="mono">20 Jan</span> <span style="margin-left:var(--sp-2)">Semester end</span></div>
-              <div class="row" style="gap:var(--sp-2)"><span class="badge badge--neutral">Always last</span></div>
-            </div>
+          <div class="cal cal--5 lp-hol">
+            <div class="cal__dow">Mon</div><div class="cal__dow">Tue</div><div class="cal__dow">Wed</div><div class="cal__dow">Thu</div><div class="cal__dow">Fri</div>
+            <span class="cal__day"><span class="mono">2</span></span>
+            <span class="cal__day"><span class="mono">3</span></span>
+            <span class="cal__day"><span class="mono">4</span></span>
+            <span class="cal__day"><span class="mono">5</span></span>
+            <span class="cal__day"><span class="mono">6</span></span>
+            <span class="cal__day is-holiday"><span class="mono">9</span><span class="cal__tag">off</span></span>
+            <span class="cal__day is-holiday"><span class="mono">10</span><span class="cal__tag">off</span></span>
+            <span class="cal__day"><span class="mono">11</span></span>
+            <span class="cal__day"><span class="mono">12</span></span>
+            <span class="cal__day"><span class="mono">13</span></span>
           </div>
+          <p class="lp-hol__note mono">2 days off &middot; 9 fewer classes to count</p>
         </div>
-        <p class="lp-card__text">Budgets count to your next checkpoint, not just the end of term. Add the audits that actually check your attendance.</p>
+        <p class="lp-card__text">A holiday means fewer classes left in the term. Mark it on the calendar and every total and budget is recounted to match.</p>
       </article>
     </div>
 
     <div class="lp-rv" data-lp-reveal style="--rot:-1deg">
       <article class="card lp-card" data-lp-tilt>
-        <p class="eyebrow">Your data</p>
-        <h3>Your data is yours</h3>
+        <p class="eyebrow">Known absences</p>
+        <h3>Commit absences ahead of time</h3>
         <div class="lp-vig" aria-hidden="true">
-          <div class="card lp-danger">
-            <h3>Delete this account</h3>
-            <p>Removes your ledger, your uploaded PDFs and your settings. No backup.</p>
-            <div class="field" style="margin-bottom:var(--sp-3)">
-              <label>Confirm with your password</label>
-              <input class="input" type="password" tabindex="-1" disabled placeholder="Password">
+          <div class="lp-list">
+            <div class="lecture">
+              <span class="lecture__when">Thu 15 Oct &mdash; CS201</span>
+              <span class="btn btn--sm btn--danger">Remove</span>
             </div>
-            <button type="button" class="btn btn--sm btn--danger" tabindex="-1">Delete everything</button>
+            <div class="lecture">
+              <span class="lecture__when">Fri 23 Oct &mdash; whole day</span>
+              <span class="btn btn--sm btn--danger">Remove</span>
+            </div>
+            <div class="lecture">
+              <span class="lecture__when">Mon 02 Nov &mdash; whole day</span>
+              <span class="btn btn--sm btn--danger">Remove</span>
+            </div>
           </div>
         </div>
-        <p class="lp-card__text">One password-confirmed button wipes the lot, raw PDFs included.</p>
+        <p class="lp-card__text">A wedding, a trip, a fest. Commit the days you already know you'll miss, so every verdict is worked out with them already counted.</p>
       </article>
     </div>
 
-  </div>
-
-  <div class="lp-facts" data-lp-reveal>
-    <p class="eyebrow">Straight answers</p>
-    <ul class="lp-facts__list">
-      <li><span class="mono">PDF</span> You upload it yourself. BUNKK doesn't log into your portal.</li>
-      <li><span class="mono">70% / 75%</span> Default limits: per subject, then overall. Change them in settings.</li>
-      <li><span class="mono">Detailed</span> It needs the detailed report. The summary export won't do.</li>
-    </ul>
   </div>
 </section>
 

@@ -730,13 +730,14 @@ class TestPlanPage:
         assert "Now · worst case" in html or "Now" in html
         assert "Projected to" in html
 
-    def test_zero_headroom_reads_as_no_slack_rather_than_tight(self, client):
-        """"DBMS Lab · 100% · TIGHT" reads as a warning about the percentage."""
+    def test_zero_headroom_reads_as_tight(self, client):
+        """One warn badge: zero headroom is not a status of its own."""
         confirm_timetable(client)
         set_end(client)
         client.post("/settings", data={"subject_limit": "95", "overall_limit": "95"})
         html = client.get("/plan").get_data(as_text=True)
-        assert "No slack yet" in html
+        assert "No slack yet" not in html
+        assert "Tight" in html
 
     def test_the_table_pairs_ledger_and_projection_in_one_row(self, client):
         """The whole point of the merge: one row answers both questions."""

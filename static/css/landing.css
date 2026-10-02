@@ -10,7 +10,7 @@
    · JS adds .lp-js to <html>. That is the switch that hides the "before"
      states, so the rules below are written as "final by default, undone
      under .lp-js unless step N has been reached".
-   · Wide screens also get .lp-sticky: the five scenes pile into one pinned
+   · Wide screens also get .lp-sticky: the six scenes pile into one pinned
      stage and scrolling drives them (--sp, --wo, .is-s1…s4, data-scene).
      Narrow screens get .lp-stack: plain rows that play when they scroll in.
    Motion is physical only: translate, small rotations, clip-path wipes,
@@ -43,10 +43,12 @@ html { scroll-behavior: smooth; }
 .lp-progress__fill { height: 100%; width: calc(var(--pp, 0) * 100%);
   background: var(--acc-yellow); border-right: var(--bw) solid var(--ink); }
 .lp-rail { display: none; }
-.lp-sticky .lp-rail { display: flex; gap: var(--sp-2); flex: 0 1 560px; min-width: 0; margin-left: var(--sp-4); }
+.lp-sticky .lp-rail { display: flex; gap: var(--sp-2); flex: 0 1 680px; min-width: 0; margin-left: var(--sp-4); }
 .lp-rail__seg { position: relative; flex: 1 1 0; min-width: 0; height: 40px; display: grid; place-items: center;
   border: var(--border); border-radius: var(--radius-sm); background: var(--card);
   color: var(--ink); text-decoration: none; overflow: hidden; }
+/* "Checkpoints" is twice the length of the other labels. */
+.lp-rail__seg[data-seg="5"] { flex-grow: 1.9; }
 .lp-rail__seg:hover { background: var(--soft-yellow); }
 .lp-rail__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--f, 0) * 100%);
   background: var(--acc-yellow); border-right: var(--bw) solid var(--ink); }
@@ -129,10 +131,29 @@ html { scroll-behavior: smooth; }
 .lp-sticker--week { --r: -3deg; --k: -10; left: -4%; bottom: 3%; width: min(340px, 78%);
   background: var(--card); border: var(--border-heavy); border-radius: var(--radius-md);
   box-shadow: var(--shadow-md); padding: var(--sp-2); }
+.lp-sticker--week .week-nav__days { grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--sp-1); }
+.lp-sticker--week .week-nav__dow { font-size: 9px; letter-spacing: 0; }
 .lp-sticker--left { --r: 9deg; --k: 16; top: 4%; right: 2%; font-size: var(--text-base);
   padding: 6px 16px; box-shadow: var(--shadow-md); }
 .lp-sticker--tile { --r: 6deg; --k: -14; right: 1%; bottom: 26%; width: 112px; }
-.lp-sticker--tile .verdict { min-width: 0; }
+/* The day tile. The app's plan page moved to month grids and dropped this
+   component, so the landing page keeps its own copy for the hero sticker and
+   the three tiles in the closing section. */
+.lp-sticker--tile .verdict, .lp-final__tile .verdict { min-width: 0; border: var(--border-heavy);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-sm);
+  padding: var(--sp-3); text-align: center; background: var(--card); }
+.lp-sticker--tile .verdict--skip, .lp-final__tile .verdict--skip { background: var(--safe-fill); }
+.lp-sticker--tile .verdict--partial, .lp-final__tile .verdict--partial { background: var(--warn-fill); }
+.lp-sticker--tile .verdict--go, .lp-final__tile .verdict--go { background: var(--danger-fill); }
+.lp-sticker--tile .verdict__dow, .lp-final__tile .verdict__dow { font-family: var(--font-label);
+  font-size: var(--text-xs); text-transform: uppercase; }
+.lp-sticker--tile .verdict__date, .lp-final__tile .verdict__date { font-family: var(--font-display);
+  font-size: var(--text-2xl); line-height: 1; margin: 2px 0; }
+.lp-sticker--tile .verdict__tag, .lp-final__tile .verdict__tag { display: block; margin-top: var(--sp-2);
+  font-family: var(--font-mono); font-weight: 700; font-size: 10px;
+  text-transform: uppercase; white-space: nowrap; border: var(--border);
+  border-radius: var(--radius-sm); padding: 2px 4px; background: var(--card); }
 .lp-sticker--tape { --r: -4deg; --k: 8; top: 1%; left: 6%;
   font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
   letter-spacing: var(--tracking-caps); background: var(--card);
@@ -237,6 +258,7 @@ html { scroll-behavior: smooth; }
 .lp-dayhead__t { margin: 0; font-size: var(--text-xl); }
 .lp-hint { display: none; margin: var(--sp-5) 0 0; font-weight: 700; font-size: var(--text-sm); }
 .lp-sticky .lp-hint { display: block; }
+.lp-scene__copy p.lp-hint { margin-top: var(--sp-4); }
 /* The Skip buttons in scene 1 are state-by-class: JS toggles .is-on. */
 .lp-skipbtn .lp-swap__b, .lp-daybtn.is-on .lp-swap__b { display: none; }
 .lp-skipbtn.is-on .lp-swap__a { display: none; }
@@ -265,24 +287,42 @@ html { scroll-behavior: smooth; }
   box-shadow: var(--shadow-sm); transform: rotate(-1.2deg); }
 
 /* ---- Pane 3: the plan -------------------------------------------------------- */
-.lp-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--sp-2); overflow: visible; padding: var(--sp-3) var(--sp-1) var(--sp-2); }
-.lp-strip .verdict { min-width: 0; padding: var(--sp-2) 2px; }
-.lp-strip .verdict__date { font-size: var(--text-xl); }
-.lp-strip .verdict__tag { font-size: 10px; letter-spacing: 0; padding: 2px 1px; }
-.lp-sheet { position: static; margin-top: auto; max-width: none; padding: var(--sp-4);
+/* The real month grid and day sheet, squeezed to fit the frame. */
+.lp-month { margin: 0; padding: var(--sp-3); box-shadow: var(--shadow-sm); flex: none; }
+.lp-month__head { display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.lp-month__head h3 { margin: 0; font-size: var(--text-lg); }
+.lp-legend { margin: 0; gap: var(--sp-1); flex-wrap: nowrap; }
+.lp-legend .badge { font-size: 9px; padding: 1px 6px; letter-spacing: 0; white-space: nowrap; }
+.lp-cal { gap: 6px; }
+.lp-cal .cal__dow { font-size: 10px; padding-bottom: 0; }
+.lp-month .lp-cal .cal__day { min-height: 30px; }
+.lp-cal .cal__day.is-pick { outline: 3px dashed var(--ink); outline-offset: 2px; }
+.lp-sheet { position: static; margin-top: auto; max-width: none; padding: var(--sp-3) var(--sp-4);
   box-shadow: var(--shadow-lg); border-radius: var(--radius-md); }
-.lp-sheet .modal__title { font-size: var(--text-xl); margin-bottom: var(--sp-3); }
-.lp-sheet .sheet-partial { margin-bottom: 0; }
+.lp-sheet .modal__title { font-size: var(--text-xl); margin-bottom: var(--sp-2); }
+.lp-sheet .sheet-verdict { margin-bottom: var(--sp-2); }
+.lp-sheet .sheet-partial { flex-direction: row; align-items: center; flex-wrap: wrap;
+  justify-content: space-between; margin-bottom: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+.lp-sheet__rows { gap: 0; }
+.lp-sheet .lecture { grid-template-columns: 1fr auto; padding: var(--sp-2) 0; cursor: pointer;
+  font-size: var(--text-sm); }
+.lp-sheet .lecture .mono { white-space: nowrap; }
+.lp-sheet__foot { margin-top: var(--sp-2); }
+/* Once the script has taken the pane over, the sheet behaves like the dialog it
+   stands in for: it sits over the page and goes away when closed. */
+.lp-plan-live .lp-sheet { position: absolute; z-index: 2; margin: 0;
+  left: var(--sp-3); right: var(--sp-3); bottom: var(--sp-3);
+  max-height: calc(100% - var(--sp-3) * 2); overflow-y: auto; }
+.lp-plan-live .lp-sheet:not(.is-open) { transform: translateY(calc(100% + 48px)); visibility: hidden; }
 @container lp-pane (max-width: 400px) {
-  .lp-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .lp-strip .verdict:nth-child(5) { display: none; }
+  .lp-legend { display: none; }
 }
 .lp-sect { font-size: var(--text-xl); margin: var(--sp-2) 0 0 !important; }
-.lp-committed { padding: var(--sp-3) var(--sp-4); box-shadow: var(--shadow-sm); min-height: 74px; display: flex; align-items: center; }
-.lp-committed > * { flex: 1; margin: 0; }
-.lp-committed__none { display: none; }
-.lp-committed__row { grid-template-columns: 1fr auto auto; border-bottom: 0; padding: 0; }
+.lp-committed { padding: var(--sp-2) var(--sp-4); box-shadow: var(--shadow-sm); min-height: 56px;
+  max-height: 132px; overflow-y: auto; flex: none; }
+.lp-committed p { margin: var(--sp-2) 0; }
+.lp-committed .lecture { padding: var(--sp-2) 0; }
 
 /* ---- Pane 4: the ladder ------------------------------------------------------- */
 .lp-ladder-card { margin: 0; box-shadow: var(--shadow-md); }
@@ -320,13 +360,42 @@ html { scroll-behavior: smooth; }
   .lp-tt__more { display: none; }
 }
 
+/* ---- Pane 6: checkpoints ------------------------------------------------------ */
+/* The checkpoints page's form and list, under the one number they change. */
+.lp-cp-stat { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline;
+  gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); box-shadow: var(--shadow-sm); flex: none; }
+.lp-cp-stat .stat__label, .lp-cp-stat .stat__meta { margin: 0; }
+.lp-cp-stat .stat__value { font-size: var(--text-3xl); }
+.lp-cp-stat .stat__meta { font-size: var(--text-xs); text-align: right; }
+.lp-cp-n.is-new { animation: lp-thud 320ms var(--lp-snap); }
+.lp-cp-form, .lp-cp-listcard { padding: var(--sp-3) var(--sp-4); box-shadow: var(--shadow-sm); margin: 0; }
+.lp-cp-form { flex: none; }
+.lp-cp-form h3, .lp-cp-listcard h3 { font-size: var(--text-base); margin: 0 0 var(--sp-2); }
+.lp-cp-fields { align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; }
+.lp-cp-fields .field { margin: 0; min-width: 0; }
+.lp-cp-fields .field > label { font-size: 10px; margin-bottom: 2px; }
+.lp-cp-fields .input { padding: 6px var(--sp-2); font-size: var(--text-sm); width: 100%; }
+.lp-cp-name { flex: 1 1 120px; }
+.lp-cp-fields .btn { white-space: nowrap; }
+.lp-cp-error { margin-top: var(--sp-2); }
+.lp-cp-listcard { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.lp-cp-list { gap: 0; }
+.lp-cp-list .lecture { grid-template-columns: 1fr auto; padding: var(--sp-2) 0; font-size: var(--text-sm); }
+.lp-cp-list .lecture.is-new { animation: lp-thud 340ms var(--lp-snap); }
+.lp-cp-list .badge { white-space: nowrap; }
+.lp-cp-list .lecture .mono { white-space: nowrap; }
+.lp-cp-list .lecture > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; }
+@container lp-pane (max-width: 440px) {
+  .lp-cp-list .lecture { grid-template-columns: 1fr; gap: var(--sp-1); }
+}
+
 /* ======================================================================
    JS MODES. Everything below is gated on .lp-js, so removing the script
    (or asking for reduced motion) leaves the final states above untouched.
    ====================================================================== */
 
 /* Shared easing for state changes. */
-.lp-js .lp-scene .verdict, .lp-js .lp-scene .ladder__rung, .lp-js .lp-scene .lp-sheet,
+.lp-js .lp-scene .ladder__rung,
 .lp-js .lp-scene .lp-file, .lp-js .lp-scene .lp-merged, .lp-js .lp-scene .tt__block,
 .lp-js .lp-scene .lp-dz, .lp-js .lp-scene .lp-reading, .lp-js .lp-scene .lp-caption,
 .lp-js .lp-scene .lp-ladder-foot {
@@ -354,21 +423,12 @@ html { scroll-behavior: smooth; }
 .lp-js .lp-scene:not(.is-s3) .lp-reading--best .meter__fill { width: 8px; }
 .lp-js .lp-scene:not(.is-s4) .lp-caption { clip-path: inset(0 100% 0 0); transform: translateX(-12px) rotate(-1.2deg); }
 
-/* -- 03: tiles slam in, a day is picked, the sheet comes up ---------------------- */
-.lp-js.lp-stack .lp-pane--plan { min-height: 470px; }
-.lp-js .lp-scene:not(.is-s4) .lp-committed__none { display: block; }
-.lp-js .lp-scene:not(.is-s4) .lp-committed__row { display: none; }
-.lp-js .lp-scene.is-s4 .lp-committed__row { animation: lp-thud 340ms var(--lp-snap); }
-.lp-js .lp-sheet { position: absolute; left: var(--sp-4); right: var(--sp-4); bottom: var(--sp-4); margin: 0; }
-.lp-js .lp-scene:not(.is-s1) .lp-strip .verdict { transform: translateY(-400%) rotate(-5deg); box-shadow: none; }
-.lp-js .lp-scene.is-s1 .lp-strip .verdict { transition-delay: calc(var(--i, 0) * 55ms), 0s, 0s, 0s; }
-.lp-js .lp-scene:not(.is-s3) .lp-sheet { transform: translateY(calc(100% + 48px)); }
-.lp-js .lp-scene:not(.is-s4) .lp-pick.is-planned { outline: none; }
-.lp-js .lp-scene:not(.is-s4) .lp-pick .verdict__date { text-decoration: none; }
-.lp-js .lp-scene:not(.is-s4) .lp-pick .verdict__count { display: none; }
-.lp-js .lp-scene.is-s4 .lp-pick .verdict__count { animation: lp-stamp 420ms var(--lp-snap); }
-.lp-js .lp-scene.is-s2:not(.is-s4) .lp-pick { outline: 3px dashed var(--ink); outline-offset: 3px;
-  transform: translate(-2px, -2px); box-shadow: var(--shadow-md); }
+/* -- 03: the grid pops in; landing.js picks a day and opens its sheet ----------- */
+.lp-js.lp-stack .lp-pane--plan { min-height: 520px; }
+.lp-js .lp-scene:not(.is-s1) .lp-cal .cal__day { transform: scale(0); box-shadow: none; }
+.lp-js .lp-plan-live .lp-sheet { transition: transform 380ms var(--lp-snap), visibility 0s; }
+.lp-js .lp-plan-live .lp-sheet:not(.is-open) { transition-delay: 0s, 380ms; }
+.lp-js .lp-cal .cal__count.is-new { animation: lp-stamp 420ms var(--lp-snap); }
 @keyframes lp-stamp {
   0%   { transform: translate(8px, -22px) rotate(-24deg); }
   60%  { transform: translate(0, 2px) rotate(4deg); }
@@ -406,26 +466,30 @@ html { scroll-behavior: smooth; }
 .lp-js .lp-scene.is-s3 .lp-drafted { animation: lp-thud 340ms var(--lp-snap); }
 
 /* ======================================================================
-   STICKY STAGE (wide screens). One pinned stage; the five scenes share a
+   STICKY STAGE (wide screens). One pinned stage; the six scenes share a
    single grid cell. Scene N sits on top of scene N+1, and "leaving" means a
    clip-path wipe (--wo 0→1) that uncovers the next one underneath.
    ====================================================================== */
-.lp-sticky .lp-story { height: calc(var(--lp-n, 5) * 100vh); }
+.lp-sticky .lp-story { height: calc(var(--lp-n, 6) * 100vh); }
 .lp-sticky .lp-stage { position: sticky; top: 0; height: 100vh; height: 100svh;
   display: grid; align-items: center; padding-top: var(--lp-bar-h); overflow: clip; }
 .lp-sticky .lp-scenes { --lp-fh: clamp(420px, calc(100svh - var(--lp-bar-h) - 120px), 560px);
   width: 100%; display: grid; gap: 0; padding-block: 0; align-items: stretch; }
 .lp-sticky .lp-scene { grid-area: 1 / 1; align-items: stretch; position: relative; z-index: 1; }
-.lp-sticky .lp-scene[data-scene="1"] { z-index: 5; }
-.lp-sticky .lp-scene[data-scene="2"] { z-index: 4; }
-.lp-sticky .lp-scene[data-scene="3"] { z-index: 3; }
-.lp-sticky .lp-scene[data-scene="4"] { z-index: 2; }
+.lp-sticky .lp-scene[data-scene="1"] { z-index: 6; }
+.lp-sticky .lp-scene[data-scene="2"] { z-index: 5; }
+.lp-sticky .lp-scene[data-scene="3"] { z-index: 4; }
+.lp-sticky .lp-scene[data-scene="4"] { z-index: 3; }
+.lp-sticky .lp-scene[data-scene="5"] { z-index: 2; }
 
 /* Copy: an opaque panel so the scene underneath can't show through it. */
 /* Copy hands off in two halves of the wipe window: --co (0..1) is the outgoing
    copy leaving, --ci (0..1) the incoming copy arriving. They never overlap, so
    two headlines are never legible at once. */
-.lp-sticky .lp-scene__copy { display: flex; align-items: center; }
+/* The counter sits in the bottom-left of the same grid cell, so the copy keeps
+   a strip clear for it. Padding rather than a margin on the counter: if the
+   copy is taller than the frame the row grows and the gap survives. */
+.lp-sticky .lp-scene__copy { display: flex; align-items: center; padding-bottom: 84px; }
 .lp-sticky .lp-scene__copyin {
   transform: translate(calc(var(--co, 0) * -72px + (1 - var(--ci, 1)) * 64px), calc((1 - var(--ci, 1)) * 28px));
   clip-path: inset(0 -24px calc((var(--co, 0) + 1 - var(--ci, 1)) * 100%) -24px); }
@@ -448,6 +512,7 @@ html { scroll-behavior: smooth; }
 .lp-stage[data-scene="3"] .lp-stage__block { transform: translate(-26px, -26px) rotate(2deg); }
 .lp-stage[data-scene="4"] .lp-stage__block { transform: translate(32px, 28px) rotate(-1.6deg); }
 .lp-stage[data-scene="5"] .lp-stage__block { transform: translate(0, 36px) rotate(0.8deg); }
+.lp-stage[data-scene="6"] .lp-stage__block { transform: translate(-30px, 20px) rotate(-1.4deg); }
 
 /* The counter: an odometer. Each digit pair is one em tall; the roll slides. */
 .lp-sticky .lp-counter { display: flex; align-items: baseline; gap: var(--sp-2); z-index: 10;
@@ -460,6 +525,7 @@ html { scroll-behavior: smooth; }
 .lp-stage[data-scene="3"] .lp-counter__roll { transform: translateY(-2.3em); }
 .lp-stage[data-scene="4"] .lp-counter__roll { transform: translateY(-3.45em); }
 .lp-stage[data-scene="5"] .lp-counter__roll { transform: translateY(-4.6em); }
+.lp-stage[data-scene="6"] .lp-counter__roll { transform: translateY(-5.75em); }
 .lp-counter__of { color: var(--ink-muted); }
 
 /* Panes are fixed height here; stack mode lets them grow. */
@@ -470,7 +536,6 @@ html { scroll-behavior: smooth; }
   .lp-sticky .lp-lectures .lecture { padding: var(--sp-2) 0; }
   .lp-sticky .lp-pane--budget .stat__value { font-size: var(--text-3xl); }
   .lp-sticky .lp-readings { gap: var(--sp-3); }
-  .lp-sticky .lp-strip .verdict__date { font-size: var(--text-lg); }
   .lp-sticky .lp-pane--ladder .ladder__rung { padding: var(--sp-2) var(--sp-4); }
   .lp-sticky .lp-pane--ladder .ladder { gap: var(--sp-2); margin: var(--sp-3) 0; }
   .lp-sticky .lp-ladder-card { padding: var(--sp-4); }
@@ -504,19 +569,11 @@ html { scroll-behavior: smooth; }
 .lp-vig .table-wrap { box-shadow: var(--shadow-sm); }
 .lp-card__text { margin: 0; font-size: var(--text-sm); color: var(--ink-muted); }
 .lp-list .lecture { grid-template-columns: 1fr auto; }
-.lp-danger { background: var(--danger-soft); box-shadow: var(--shadow-sm); }
-.lp-danger h3 { font-family: var(--font-body); font-weight: 800; font-size: var(--text-lg); margin-bottom: var(--sp-2); }
-.lp-danger p { font-size: var(--text-sm); margin: 0 0 var(--sp-3); }
-.lp-danger .input { max-width: 260px; }
+.lp-half .sheet-verdict, .lp-half .sheet-partial { margin: 0; }
+.lp-hol .cal__day { aspect-ratio: auto; min-height: 48px; cursor: default; }
+.lp-hol__note { margin: var(--sp-3) 0 0; font-size: var(--text-xs); font-weight: 700; }
 @media (max-width: 520px) { .lp-vig .banner { flex-direction: column; align-items: flex-start; } }
 
-.lp-facts { margin-top: var(--sp-7); background: var(--soft-cyan); border: var(--border-heavy);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--sp-5); }
-.lp-facts .eyebrow { margin: 0 0 var(--sp-4); }
-.lp-facts__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-4);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
-.lp-facts__list li { font-size: var(--text-sm); }
-.lp-facts__list .mono { display: block; font-weight: 700; font-size: var(--text-lg); margin-bottom: 2px; }
 
 /* One-shot reveals: slide in, wipe open. JS adds .is-in, then .is-done. */
 .lp-js [data-lp-reveal] { transform: translateY(44px) rotate(var(--rot, 0deg)); clip-path: inset(0 0 100% 0);
