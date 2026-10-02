@@ -89,11 +89,19 @@ class TestAuth:
         assert resp.status_code == 302
         assert client.get("/").status_code == 200
 
-    @pytest.mark.parametrize("path", ["/", "/upload", "/settings"])
+    @pytest.mark.parametrize("path", ["/upload", "/settings"])
     def test_pages_require_a_session(self, client, path):
         resp = client.get(path)
         assert resp.status_code == 302
         assert "/login" in resp.headers["Location"]
+
+    def test_anonymous_home_is_the_public_landing_page(self, client):
+        resp = client.get("/")
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "BUNKR" in body
+        assert 'href="/register"' in body
+        assert 'href="/login"' in body
 
     def test_upload_api_requires_a_session(self, client):
         assert upload(client).status_code == 302
