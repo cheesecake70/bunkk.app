@@ -2,17 +2,20 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date, time
+from datetime import date, time, timedelta
+from functools import wraps
 
 from flask import Blueprint, jsonify, request
+from flask_limiter.util import get_remote_address
 from flask_login import current_user, login_required
+from sqlalchemy.exc import IntegrityError
 
 from report_parser import ReportParseError
 
 from attendance_engine import DayVerdict
 
-from . import db, planning
-from .merge import IdentityClaimed, MergeError, MergeResult, ingest, resolve_proposals
+from . import db, limiter, planning
+from .merge import MergeError, MergeResult, ingest, resolve_proposals
 from .models import LectureInstance, PlannedAbsence, Subject
 from .services import (
     UNKNOWN_STATUSES,
@@ -31,9 +34,101 @@ bp = Blueprint("api", __name__, url_prefix="/api")
 
 MAX_PDF_BYTES = 5 * 1024 * 1024
 
+#: Parsing a PDF is the one expensive thing a signed-in user can ask for, so
+#: it is the one thing metered per account rather than per address.
+UPLOAD_LIMIT = "20 per minute"
+
+#: Ceilings on the lists a request may carry. Each is far above anything the
+#: pages send; they exist so a hand-built request can't make one worker do an
+#: afternoon's arithmetic.
+MAX_BATCH_LECTURES = 50
+MAX_SIMULATED_ABSENCES = 500
+MAX_TIMETABLE_BLOCKS = 300
+MAX_PREDICTION_RESTORE = 5000
+
+#: Dates outside this window are typos, not plans — and the far end of the
+#: calendar is where date arithmetic overflows.
+MIN_DATE = date(2000, 1, 1)
+MAX_FUTURE_DAYS = 731
+
+
+# ---------------------------------------------------------------------------
+# Reading a request. JSON can hold anything, so nothing below is trusted to be
+# the type the pages happen to send.
+# ---------------------------------------------------------------------------
+
+
+def _json_object() -> dict:
+    """The request body as a dict.
+
+    Anything else — no body, a list, a bare string — reads as empty, so each
+    endpoint's own validation answers it with its usual 400.
+    """
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _as_date(value) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    if not MIN_DATE <= parsed <= date.today() + timedelta(days=MAX_FUTURE_DAYS):
+        return None
+    return parsed
+
+
+def _as_id(value) -> int | None:
+    """A row id, from a JSON number or a numeric string."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    try:
+        number = int(value)
+    except ValueError:
+        return None
+    return number if 0 < number < 2 ** 63 else None
+
+
+def _as_text(value, limit: int) -> str | None:
+    """Free text trimmed to its column's width; anything that isn't text is
+    dropped rather than stored."""
+    if not isinstance(value, str):
+        return None
+    return value.strip()[:limit] or None
+
+
+def idempotent(view):
+    """Run a "make it so" endpoint again when it loses a race with itself.
+
+    Marking a holiday, planning an absence and guessing at a lecture all check
+    for an existing row and insert one if there is none. Two copies of the
+    same request — a double tap, a retry on a flaky connection, a second tab —
+    can both pass the check, and the unique index then refuses the slower one.
+    That request asked for a state that now exists, so the right answer is the
+    one the faster request got: run it again and let it find the row.
+    """
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        try:
+            return view(*args, **kwargs)
+        except IntegrityError:
+            db.session.rollback()
+            planning.forget_derived()
+            return view(*args, **kwargs)
+    return wrapper
+
+
+def _user_key() -> str:
+    if current_user.is_authenticated:
+        return f"user:{current_user.id}"
+    return get_remote_address()
+
 
 @bp.post("/reports")
 @login_required
+@limiter.limit(UPLOAD_LIMIT, key_func=_user_key)
 def upload_report():
     file = request.files.get("report")
     if file is None or not file.filename:
@@ -49,18 +144,6 @@ def upload_report():
 
     try:
         result = ingest(current_user, data, file.filename)
-    except IdentityClaimed as exc:
-        # Name the account holding this student number. Being told only that
-        # "another account" has it leaves the one person who can act on it —
-        # its owner, signed into their other account — with nowhere to go.
-        return jsonify(
-            error=str(exc),
-            claimed_by={
-                "username": exc.username,
-                "email_hint": exc.email_hint,
-                "student_number": exc.student_number,
-            },
-        ), 422
     except (ReportParseError, MergeError) as exc:
         # Parser errors carry user-facing wording by design (report_parser.types).
         return jsonify(error=str(exc)), 422
@@ -71,7 +154,7 @@ def upload_report():
 @bp.post("/reports/<int:snapshot_id>/resolve")
 @login_required
 def resolve_report(snapshot_id: int):
-    decisions = (request.get_json(silent=True) or {}).get("decisions") or {}
+    decisions = _json_object().get("decisions") or {}
     if not isinstance(decisions, dict):
         return jsonify(error="Malformed answer."), 400
 
@@ -176,12 +259,12 @@ def _stats_payload() -> dict:
 
 @bp.post("/calendar/day")
 @login_required
+@idempotent
 def calendar_day():
     """Tap a day: normal → holiday → normal."""
-    payload = request.get_json(silent=True) or {}
-    try:
-        on_date = date.fromisoformat(payload.get("date", ""))
-    except ValueError:
+    payload = _json_object()
+    on_date = _as_date(payload.get("date"))
+    if on_date is None:
         return jsonify(error="Bad date."), 400
 
     if on_date < date.today():
@@ -191,7 +274,8 @@ def calendar_day():
     if kind not in (None, "holiday"):
         return jsonify(error="Unknown day type."), 400
 
-    planning.set_day(current_user, on_date, kind, name=(payload.get("name") or None))
+    planning.set_day(current_user, on_date, kind,
+                     name=_as_text(payload.get("name"), 120))
     return jsonify(ok=True, date=on_date.isoformat(), kind=kind)
 
 
@@ -202,13 +286,13 @@ MAX_RANGE_DAYS = 92
 
 @bp.post("/calendar/range")
 @login_required
+@idempotent
 def calendar_range():
     """Mark a whole stretch off — a mid-sem break, a festival week."""
-    payload = request.get_json(silent=True) or {}
-    try:
-        frm = date.fromisoformat(payload.get("from", ""))
-        to = date.fromisoformat(payload.get("to", ""))
-    except ValueError:
+    payload = _json_object()
+    frm = _as_date(payload.get("from"))
+    to = _as_date(payload.get("to"))
+    if frm is None or to is None:
         return jsonify(error="Bad date."), 400
 
     kind = payload.get("kind", "holiday")
@@ -222,12 +306,13 @@ def calendar_range():
         return jsonify(error="That's longer than a semester — check the dates."), 400
 
     touched = planning.set_days(current_user, frm, to, kind,
-                                name=(payload.get("name") or None))
+                                name=_as_text(payload.get("name"), 120))
     return jsonify(ok=True, kind=kind, dates=[d.isoformat() for d in touched])
 
 
 @bp.route("/lectures/<int:lecture_id>/prediction", methods=["PUT", "DELETE"])
 @login_required
+@idempotent
 def lecture_prediction(lecture_id: int):
     """Say how you expect an unmarked lecture to resolve, or take it back."""
     lecture = db.session.get(LectureInstance, lecture_id)
@@ -243,7 +328,7 @@ def lecture_prediction(lecture_id: int):
     if lecture.status not in UNKNOWN_STATUSES:
         return jsonify(error="The college has already marked that one."), 409
 
-    predicted = (request.get_json(silent=True) or {}).get("predicted")
+    predicted = _json_object().get("predicted")
     if predicted not in ("P", "A"):
         return jsonify(error="Predict either P or A."), 400
 
@@ -253,6 +338,7 @@ def lecture_prediction(lecture_id: int):
 
 @bp.post("/subjects/<int:subject_id>/predictions")
 @login_required
+@idempotent
 def subject_predictions(subject_id: int):
     """Guess at every unmarked lecture of one subject in one go.
 
@@ -263,7 +349,7 @@ def subject_predictions(subject_id: int):
     if subject is None or subject.user_id != current_user.id:
         return jsonify(error="Unknown subject."), 404
 
-    predicted = (request.get_json(silent=True) or {}).get("predicted")
+    predicted = _json_object().get("predicted")
     if predicted not in ("P", "A", None):
         return jsonify(error="Predict either P or A, or null to clear."), 400
 
@@ -273,26 +359,27 @@ def subject_predictions(subject_id: int):
 
 @bp.post("/predictions/bulk")
 @login_required
+@idempotent
 def bulk_predictions():
     """Every pending lecture at once, or a named set of them.
 
     The named form is what Undo posts: the `previous` map from any of these
     endpoints goes straight back in as `lectures`.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object()
 
     if "lectures" in payload:
         wanted = payload["lectures"]
-        if not isinstance(wanted, dict):
+        if not isinstance(wanted, dict) or len(wanted) > MAX_PREDICTION_RESTORE:
             return jsonify(error="Malformed restore."), 400
         changes: dict[int, str | None] = {}
         for key, value in wanted.items():
-            if value not in ("P", "A", None):
+            if not (value is None or value in ("P", "A")):
                 return jsonify(error="Predict either P or A, or null to clear."), 400
-            try:
-                changes[int(key)] = value
-            except (TypeError, ValueError):
+            lecture_id = _as_id(key)
+            if lecture_id is None:
                 return jsonify(error="Malformed restore."), 400
+            changes[lecture_id] = value
         previous = apply_prediction_map(current_user, changes)
         return jsonify(_prediction_result(None, previous))
 
@@ -331,9 +418,8 @@ def day_sheet(on_date: str):
     Keyed by (subject, start) rather than by time alone: a timetable can run
     two subjects in the same slot, and two lectures of one subject in a day.
     """
-    try:
-        day = date.fromisoformat(on_date)
-    except ValueError:
+    day = _as_date(on_date)
+    if day is None:
         return jsonify(error="Bad date."), 400
 
     holiday = next(
@@ -432,9 +518,8 @@ def _partial_payload(plan):
 
 def _day_guard(payload):
     """The date every absence request needs, or the reason it can't be used."""
-    try:
-        on_date = date.fromisoformat(payload.get("date", ""))
-    except ValueError:
+    on_date = _as_date(payload.get("date"))
+    if on_date is None:
         return None, (jsonify(error="Bad date."), 400)
     if on_date < date.today():
         return None, (jsonify(error="That day has already happened."), 400)
@@ -454,7 +539,8 @@ def _ensure_absence(on_date, subject_id, raw_start, note=None):
     and one decision — lands as one transaction rather than four races.
     """
     if subject_id is not None:
-        subject = db.session.get(Subject, subject_id)
+        subject_id = _as_id(subject_id)
+        subject = db.session.get(Subject, subject_id) if subject_id else None
         if subject is None or subject.user_id != current_user.id:
             return None, (jsonify(error="Unknown subject."), 404)
 
@@ -462,6 +548,10 @@ def _ensure_absence(on_date, subject_id, raw_start, note=None):
         start_time = time.fromisoformat(raw_start) if raw_start else None
     except (TypeError, ValueError):
         return None, (jsonify(error="Bad time."), 400)
+    if subject_id is None:
+        # A whole day has no start; a time stored on one would make it a row
+        # nothing else recognises as the whole day.
+        start_time = None
 
     # An absence against a lecture the timetable doesn't have would count zero
     # anyway; refusing it says so instead of silently storing a no-op. The same
@@ -478,18 +568,18 @@ def _ensure_absence(on_date, subject_id, raw_start, note=None):
         if not matches:
             return None, (jsonify(error="Your timetable has no such class that day."), 422)
 
-    # SQLite treats NULLs as distinct in a unique index, so the constraint
-    # alone would not stop two whole-day rows. The check stays.
+    # The unique indexes are the guarantee (models.PlannedAbsence); this check
+    # is what makes asking twice answer with the row instead of an error.
     existing = (
         db.session.query(PlannedAbsence)
         .filter_by(user_id=current_user.id, on_date=on_date,
                    subject_id=subject_id, start_time=start_time)
-        .one_or_none()
+        .first()
     )
     if existing is None:
         existing = PlannedAbsence(
             user_id=current_user.id, on_date=on_date, subject_id=subject_id,
-            start_time=start_time, note=(note or None),
+            start_time=start_time, note=_as_text(note, 200),
         )
         db.session.add(existing)
     return existing, None
@@ -497,9 +587,10 @@ def _ensure_absence(on_date, subject_id, raw_start, note=None):
 
 @bp.post("/absences")
 @login_required
+@idempotent
 def add_absence():
     """Commit to missing a future date (whole day, or one subject on it)."""
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object()
     on_date, error = _day_guard(payload)
     if error:
         return error
@@ -517,6 +608,7 @@ def add_absence():
 
 @bp.post("/absences/batch")
 @login_required
+@idempotent
 def add_absences():
     """Commit to missing several lectures of one day at once.
 
@@ -524,7 +616,7 @@ def add_absences():
     raced them against each other and recomputed the whole wallet four times
     for an answer that only had to be worked out once.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object()
     on_date, error = _day_guard(payload)
     if error:
         return error
@@ -532,6 +624,8 @@ def add_absences():
     wanted = payload.get("lectures")
     if not isinstance(wanted, list) or not wanted:
         return jsonify(error="Nothing to plan."), 400
+    if len(wanted) > MAX_BATCH_LECTURES:
+        return jsonify(error="That's more lectures than a day holds."), 400
 
     ids = {}
     for item in wanted:
@@ -569,18 +663,28 @@ def remove_absence(absence_id: int):
 @login_required
 def simulate_plan():
     """Hypothetical absences — nothing is stored."""
-    payload = request.get_json(silent=True) or {}
+    payload = _json_object()
+    wanted = payload.get("absences") or []
+    if not isinstance(wanted, list) or len(wanted) > MAX_SIMULATED_ABSENCES:
+        return jsonify(error="Malformed absence in the plan."), 400
+
     extras = []
-    for item in payload.get("absences") or []:
-        try:
-            start = item.get("start")
-            extras.append((
-                date.fromisoformat(item["date"]),
-                item.get("subject_id"),
-                time.fromisoformat(start) if start else None,
-            ))
-        except (KeyError, TypeError, ValueError):
+    for item in wanted:
+        if not isinstance(item, dict):
             return jsonify(error="Malformed absence in the plan."), 400
+        on_date = _as_date(item.get("date"))
+        subject_id = item.get("subject_id")
+        if subject_id is not None:
+            subject_id = _as_id(subject_id)
+        start = item.get("start")
+        try:
+            start_time = time.fromisoformat(start) if start else None
+        except (TypeError, ValueError):
+            start_time = False
+        if on_date is None or start_time is False or (
+                item.get("subject_id") is not None and subject_id is None):
+            return jsonify(error="Malformed absence in the plan."), 400
+        extras.append((on_date, subject_id, start_time))
 
     # "light" is the pre-commit check: it asks whether a plan would break
     # anything, and never draws the strip it would have to project to answer
@@ -600,6 +704,8 @@ def save_timetable():
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict) or not isinstance(payload.get("blocks"), list):
         return jsonify(error="Malformed request."), 400
+    if len(payload["blocks"]) > MAX_TIMETABLE_BLOCKS:
+        return jsonify(error="That's more blocks than a week holds."), 400
 
     # Narrowed to what will actually be stored before anything is judged on it:
     # `save_timetable` blanks the current version before writing, so a grid

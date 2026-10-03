@@ -5,7 +5,7 @@ flask-migrate==4.1.0
 flask-wtf==1.3.0
 flask-limiter==4.1.1
 authlib==1.8.0
-requests>=2.32
-python-dotenv==1.1.1
+requests==2.34.2
+python-dotenv==1.2.2
 pdfplumber==0.11.10
 gunicorn==26.0.0

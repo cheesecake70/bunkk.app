@@ -1,0 +1,27 @@
+# systemd unit for Bunkr. Copy to /etc/systemd/system/bunkr.service, adjust
+# User and the two paths, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bunkr
+#
+# Configuration comes from /srv/bunkr/.env (see .env.example); gunicorn.conf.py
+# reads it, so nothing secret needs to appear in this file.
+[Unit]
+Description=Bunkr (gunicorn)
+After=network.target
+
+[Service]
+User=bunkr
+Group=bunkr
+WorkingDirectory=/srv/bunkr
+# Explicit, so the migration step runs under the same config as the server.
+Environment=BUNKR_CONFIG=config.ProdConfig
+ExecStartPre=/srv/bunkr/.venv/bin/flask db upgrade
+ExecStart=/srv/bunkr/.venv/bin/gunicorn -c gunicorn.conf.py run:app
+Restart=on-failure
+RestartSec=3
+# The app only ever writes to instance/ (the database and uploaded PDFs).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from flask import (
     Blueprint,
     abort,
+    current_app,
     flash,
     jsonify,
     redirect,
@@ -16,6 +17,8 @@ from flask import (
 )
 from markupsafe import Markup
 from flask_login import current_user, login_required
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from . import db, planning
 from .filters import WEEKDAYS
@@ -39,6 +42,16 @@ bp = Blueprint("core", __name__)
 
 @bp.get("/healthz")
 def healthz():
+    """Liveness for the reverse proxy or an uptime monitor.
+
+    Asks the database a question too: a process that is up but can't reach
+    its ledger is not healthy, and "ok" would keep traffic flowing to it.
+    """
+    try:
+        db.session.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        current_app.logger.exception("healthz: database unreachable")
+        return jsonify(status="error", app="bunkr"), 503
     return jsonify(status="ok", app="bunkr")
 
 
@@ -304,6 +317,8 @@ def _parse_grid(form) -> list[planning.Entry]:
         }
         for i in range(len(kinds))
     ])
+
+
 @bp.get("/calendar")
 @login_required
 def calendar():
@@ -352,6 +367,9 @@ def set_end_date():
         return redirect(url_for("core.calendar"))
     if end <= date.today():
         flash("The semester end date needs to be in the future.", "error")
+        return redirect(url_for("core.calendar"))
+    if end > date.today() + timedelta(days=planning.MAX_SEMESTER_DAYS):
+        flash("That's more than a year away — check the year.", "error")
         return redirect(url_for("core.calendar"))
 
     planning.set_semester_end(current_user, end)

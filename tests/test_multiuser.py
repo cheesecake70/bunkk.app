@@ -5,8 +5,6 @@ only becomes a question with a second person: who may create an account, whose
 identity a report claims, what a shared device does, and whether leaving takes
 your data with you.
 """
-import re
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -169,20 +167,59 @@ class TestLoginRedirects:
 
 
 class TestIdentityClaiming:
-    def test_a_report_belongs_to_one_account_only(self, app):
-        """Uploading a friend's PDF must not silently claim their identity."""
+    def test_one_student_may_have_several_accounts(self, app):
+        """Starting a fresh account and uploading your own report into it is
+        an ordinary thing to do. Each account gets a ledger of its own."""
         first = app.test_client()
-        register(first, "real@example.com")
+        register(first, "old@example.com")
         assert upload(first).status_code == 200
 
         second = app.test_client()
-        register(second, "impostor@example.com")
+        register(second, "new@example.com")
         resp = upload(second)
 
-        assert resp.status_code == 422
-        assert "already set up on another" in resp.get_json()["error"]
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "merged"
+        assert "claimed_by" not in resp.get_json()
         with app.app_context():
-            assert db.session.query(LectureInstance).count() == 126   # only one ledger
+            users = {u.email: u.student_number for u in db.session.query(User).all()}
+            assert users == {"old@example.com": "60000000001",
+                             "new@example.com": "60000000001"}
+            for user in db.session.query(User).all():
+                assert db.session.query(LectureInstance).filter_by(
+                    user_id=user.id).count() == 126
+
+    def test_the_two_ledgers_stay_separate(self, app):
+        first = app.test_client()
+        register(first, "old@example.com")
+        upload(first)
+        second = app.test_client()
+        register(second, "new@example.com")
+        upload(second)
+
+        # A guess in one account moves nothing in the other.
+        before = first.get("/api/dashboard").get_json()["overall"]
+        assert second.post("/api/predictions/bulk",
+                           json={"predicted": "P"}).get_json()["changed"] > 0
+        assert first.get("/api/dashboard").get_json()["overall"] == before
+
+    def test_an_account_still_holds_only_one_student(self, app, tmp_path):
+        from datetime import date, time
+        from reportlab_stub import make_detailed_pdf
+
+        client = app.test_client()
+        register(client, "m@example.com")
+        assert upload(client).status_code == 200
+
+        other = tmp_path / "other.pdf"
+        make_detailed_pdf(
+            other,
+            [("Computer NetworksT C2", date(2026, 7, 16), time(10, 0, 1), time(11, 0, 0), "P")],
+            student_number="60004250099", roll_no="C102", student_name="OTHER STUDENT",
+        )
+        resp = upload(client, other)
+        assert resp.status_code == 422
+        assert "belongs to student 60004250099" in resp.get_json()["error"]
 
     def test_the_owner_can_still_re_upload(self, app):
         client = app.test_client()
@@ -408,42 +445,13 @@ class TestSessions:
         assert elsewhere.get("/").status_code == 302     # that one doesn't
 
 
-class TestClaimedIdentityPointsHome:
-    """"Another account has this student number" is a dead end on its own.
-
-    The person reading it is nearly always its owner, signed into the wrong one
-    of their two accounts, so the refusal names the account and offers the way
-    across — with the email masked, because a report that has fallen into
-    someone else's hands must not also hand over a contact address.
-    """
-
-    def _claim_then_collide(self, app):
-        owner = app.test_client()
-        register(owner, "owner@example.com", username="owner")
-        assert upload(owner).status_code == 200
-
-        other = app.test_client()
-        register(other, "second@example.com", username="second")
-        return other, upload(other)
-
-    def test_the_refusal_names_the_account_holding_it(self, app):
-        _, resp = self._claim_then_collide(app)
-        assert resp.status_code == 422
-        claimed = resp.get_json()["claimed_by"]
-        assert claimed["username"] == "owner"
-        assert claimed["student_number"] == "60000000001"
-
-    def test_the_email_is_masked_but_still_recognisable(self, app):
-        """Enough to tell your Gmail account from your Outlook one, and no more."""
-        _, resp = self._claim_then_collide(app)
-        hint = resp.get_json()["claimed_by"]["email_hint"]
-        assert hint.endswith("@example.com")
-        assert hint.startswith("o")
-        assert "owner@" not in hint
-        assert "\u2022" in hint
+class TestSigningOutTowardsAnotherAccount:
+    """Sign-out can carry where to land, so switching accounts arrives at the
+    login page with the right one already named."""
 
     def test_signing_out_can_land_on_that_account_s_login(self, app):
-        other, _ = self._claim_then_collide(app)
+        other = app.test_client()
+        register(other, "second@example.com", username="second")
         resp = other.post("/logout", data={"next": "/login?as=owner"})
         assert resp.headers["Location"] == "/login?as=owner"
 
@@ -457,8 +465,8 @@ class TestClaimedIdentityPointsHome:
         resp = client.post("/logout", data={"next": "https://evil.example.com/x"})
         assert resp.headers["Location"] == "/login"
 
-    def test_an_ordinary_failure_names_nobody(self, app):
-        """Only this one refusal carries an account; a bad PDF must not."""
+    def test_an_upload_failure_names_nobody(self, app):
+        """No refusal says anything about any other account."""
         client = app.test_client()
         register(client, "m@example.com")
         summary = Path(__file__).parent / "golden" / "summary_july.pdf"

@@ -1,0 +1,16 @@
+# Caddy in front of gunicorn: HTTPS (certificates are issued automatically)
+# and the X-Forwarded-* headers the app trusts one hop of.
+#
+# Replace the hostname with yours; it must match BUNKR_TRUSTED_HOSTS and the
+# redirect URI registered with Google.
+bunkr.example.com {
+	encode gzip
+
+	# Uploads are capped at 5 MB by the app; refuse anything larger here so it
+	# never reaches a worker.
+	request_body {
+		max_size 6MB
+	}
+
+	reverse_proxy 127.0.0.1:8000
+}

@@ -21,6 +21,7 @@ import difflib
 import hashlib
 import json
 import os
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 
@@ -47,34 +48,6 @@ SIMILARITY_ASK = 0.85
 
 class MergeError(Exception):
     """User-facing ingestion failure."""
-
-
-class IdentityClaimed(MergeError):
-    """The report's student number already backs a different account.
-
-    Carries who holds it, because "some other account has this" is a dead end:
-    the person hitting it is nearly always themselves, signed into the wrong
-    one of their two accounts, and the only thing they need is to be told which.
-
-    The email is masked to its first letter and domain. That is enough to tell
-    your Gmail account from your Outlook one, and stops a report that fell into
-    someone else's hands from also handing over a full contact address.
-    """
-
-    def __init__(self, message: str, *, username: str, email: str,
-                 student_number: str):
-        super().__init__(message)
-        self.username = username
-        self.email_hint = mask_email(email)
-        self.student_number = student_number
-
-
-def mask_email(email: str) -> str:
-    """nandu@gmail.com -> n••••@gmail.com"""
-    name, at, domain = (email or "").partition("@")
-    if not at or not name:
-        return "•••"
-    return name[0] + "•" * max(3, len(name) - 1) + "@" + domain
 
 
 # --------------------------------------------------------------------------
@@ -144,6 +117,11 @@ def ingest(user: User, data: bytes, filename: str | None = None) -> MergeResult:
         .filter(ReportSnapshot.status.in_(("merged", "staged")))
         .first()
     )
+    if previous is not None and previous.status == "staged":
+        # The same file again, but the first attempt stopped at the alias
+        # question and never reached the ledger. Calling that "nothing new"
+        # would leave the report impossible to ingest; ask the question again.
+        return _resume_staged(user, previous)
     if previous is not None:
         # Rule 3 taken to its conclusion: an identical file cannot say anything new.
         return MergeResult(
@@ -171,25 +149,10 @@ def ingest_report(
         return _ingest_report(user, report, digest=digest, data=data,
                               filename=filename)
     except IntegrityError:
-        # Two accounts uploading the same student's report at the same moment
-        # both passed `_check_identity`; the unique index caught the second.
-        # Answer it the way the check would have, rather than with a 500.
+        # This account uploading twice at once (two tabs, a double submit):
+        # the second insert of the same lecture loses to the first.
         db.session.rollback()
-        claimed = (
-            db.session.query(User)
-            .filter(User.student_number == report.header.student_number,
-                    User.id != user.id)
-            .first()
-        )
-        if claimed is None:
-            raise MergeError("That upload clashed with another; try again.")
-        raise IdentityClaimed(
-            f"Student {report.header.student_number} is already set up on "
-            "another Bunkr account. If that's you, sign in as that account "
-            "instead of uploading the report here.",
-            username=claimed.username, email=claimed.email,
-            student_number=report.header.student_number,
-        )
+        raise MergeError("That upload clashed with another; try again.")
 
 
 def _ingest_report(user, report, *, digest, data, filename) -> MergeResult:
@@ -205,21 +168,32 @@ def _ingest_report(user, report, *, digest, data, filename) -> MergeResult:
     semester = _get_or_create_semester(user, report.header.academic_session)
 
     path = _store_pdf(user, data, digest, filename) if data is not None else "(unsaved)"
-    snapshot = ReportSnapshot(
-        user_id=user.id,
-        semester_id=semester.id,
-        period_start=report.header.period_start,
-        period_end=report.header.period_end,
-        file_path=path,
-        original_filename=filename,
-        file_sha256=digest,
-        lecture_count=len(report.lectures),
-        status="staged",
-        parsed_json=_serialise(report),
-    )
-    db.session.add(snapshot)
-    db.session.flush()
+    try:
+        snapshot = ReportSnapshot(
+            user_id=user.id,
+            semester_id=semester.id,
+            period_start=report.header.period_start,
+            period_end=report.header.period_end,
+            file_path=path,
+            original_filename=(filename or "")[:255] or None,
+            file_sha256=digest,
+            lecture_count=len(report.lectures),
+            status="staged",
+            parsed_json=_serialise(report),
+        )
+        db.session.add(snapshot)
+        db.session.flush()
+        return _merge_or_ask(user, semester, snapshot, report, before=before)
+    except Exception:
+        # The PDF was written before the transaction that records it; if that
+        # transaction fails, nothing will ever point at the file again.
+        if data is not None:
+            _discard_pdf(path)
+        raise
 
+
+def _merge_or_ask(user, semester, snapshot, report, *, before=None) -> MergeResult:
+    """Fold a staged snapshot into the ledger, or stop to ask about a name."""
     mapping, proposals, created = _resolve_subjects(user, semester, report)
     if proposals:
         # Hold the snapshot until the user answers; nothing touches the ledger.
@@ -236,6 +210,12 @@ def _ingest_report(user, report, *, digest, data, filename) -> MergeResult:
     result.new_subjects = created
     db.session.commit()
     return result
+
+
+def _resume_staged(user: User, snapshot: ReportSnapshot) -> MergeResult:
+    report = _deserialise(snapshot.parsed_json)
+    semester = _get_or_create_semester(user, report.header.academic_session)
+    return _merge_or_ask(user, semester, snapshot, report)
 
 
 def resolve_proposals(user: User, snapshot_id: int, decisions: dict[str, str]) -> MergeResult:
@@ -259,19 +239,24 @@ def resolve_proposals(user: User, snapshot_id: int, decisions: dict[str, str]) -
     # Record the user's answers as aliases first; resolution then finds them.
     for lec in report.lectures:
         choice = decisions.get(lec.raw_course_name)
-        if not choice:
+        if not isinstance(choice, str) or not choice.startswith("merge:"):
+            # "new" (or no answer) needs no alias: resolution creates the
+            # subject below.
             continue
-        if choice.startswith("merge:"):
+        try:
             subject = db.session.get(Subject, int(choice.split(":", 1)[1]))
-            if subject is None or subject.user_id != user.id:
-                raise MergeError("Unknown subject in your answer.")
-            _remember_alias(user, lec.raw_course_name, subject, source="user")
-        # "new" needs no alias: resolution will create the subject below.
+        except (ValueError, OverflowError):
+            subject = None
+        # This term's subjects only — the same rule the proposal was built on.
+        if (subject is None or subject.user_id != user.id
+                or subject.semester_id != semester.id):
+            raise MergeError("Unknown subject in your answer.")
+        _remember_alias(user, lec.raw_course_name, subject, source="user")
 
-    mapping, proposals, created = _resolve_subjects(
+    # force_create leaves nothing to ask about, so `proposals` is always empty.
+    mapping, _proposals, created = _resolve_subjects(
         user, semester, report, force_create=True
     )
-    assert not proposals  # force_create leaves nothing to ask about
 
     result = _apply(user, snapshot, report, mapping)
     result.new_subjects = created
@@ -285,7 +270,13 @@ def resolve_proposals(user: User, snapshot_id: int, decisions: dict[str, str]) -
 
 
 def _check_identity(user: User, report: ParsedReport) -> None:
-    """Refuse someone else's report rather than silently ingesting garbage."""
+    """Keep one account to one student.
+
+    The first report sets who the account is for; a later report for someone
+    else is refused, because folding two students into one ledger produces
+    numbers that are true of neither. Nothing here looks at *other* accounts:
+    the same student may have as many as they like, each with its own ledger.
+    """
     header = report.header
     if user.student_number and header.student_number != user.student_number:
         raise MergeError(
@@ -294,26 +285,6 @@ def _check_identity(user: User, report: ParsedReport) -> None:
         )
 
     if not user.student_number:
-        # A student number identifies one person, so it may back only one
-        # account. Without this check, uploading a friend's PDF would silently
-        # claim their identity and build a second, diverging copy of their
-        # ledger — and their next upload would be refused, not yours.
-        claimed = (
-            db.session.query(User)
-            .filter(User.student_number == header.student_number, User.id != user.id)
-            .first()
-        )
-        if claimed is not None:
-            raise IdentityClaimed(
-                f"Student {header.student_number} is already set up on another "
-                "Bunkr account. If that's you, sign in as that account "
-                "instead of uploading the report here.",
-                username=claimed.username,
-                email=claimed.email,
-                student_number=header.student_number,
-            )
-
-        # First upload claims the identity printed on the report.
         user.student_number = header.student_number
         user.roll_no = header.roll_no
 
@@ -321,11 +292,21 @@ def _check_identity(user: User, report: ParsedReport) -> None:
 def _store_pdf(user: User, data: bytes, digest: str, filename: str | None) -> str:
     upload_dir = os.path.join(current_app.config["UPLOAD_DIR"], str(user.id))
     os.makedirs(upload_dir, exist_ok=True)
-    name = f"{datetime.now():%Y%m%d-%H%M%S}-{digest[:12]}.pdf"
+    # The random tail makes the file this request's alone. Two uploads of one
+    # file in the same second used to share a name, so the one that failed and
+    # cleaned up after itself deleted the PDF the other had just recorded.
+    name = f"{datetime.now():%Y%m%d-%H%M%S}-{digest[:12]}-{uuid.uuid4().hex[:8]}.pdf"
     path = os.path.join(upload_dir, name)
-    with open(path, "wb") as fh:
+    with open(path, "xb") as fh:
         fh.write(data)
     return path
+
+
+def _discard_pdf(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        current_app.logger.warning("Could not remove orphaned upload %s", path)
 
 
 def _get_or_create_semester(user: User, session_label: str) -> Semester:

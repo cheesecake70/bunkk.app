@@ -78,10 +78,10 @@ everything that only becomes a question with a second person:
   email, so there is no verification link to click either. Accounts are keyed
   on Google's stable subject id, so renaming your address at Google keeps your
   ledger.
-- **One student, one account.** A student number is claimed by the first
-  account to upload it and is unique thereafter, so uploading a friend's PDF
-  can no longer silently claim their identity and build a second, diverging
-  copy of their ledger.
+- **One account, one student.** The first report uploaded sets who an account
+  is for, and a report for anyone else is refused — two students folded into
+  one ledger gives numbers true of neither. The same student may have several
+  accounts; each keeps its own separate ledger.
 - **SQLite made fit for concurrency** (ADR-2): WAL so readers aren't blocked by
   a writer, a busy timeout so contention waits instead of erroring, and
   foreign keys enforced so a deleted account can't orphan a ledger.
@@ -105,7 +105,7 @@ and never describes a day with nothing left to decide.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt -c requirements.lock
 flask db upgrade                  # create/upgrade instance/bunkr.db
 python -m pytest tests/ -q        # should be all green
 python run.py                     # http://127.0.0.1:5000
@@ -135,7 +135,9 @@ passwords of its own. It needs one OAuth client from Google Cloud Console:
 
 Google only vouches for verified addresses, and Bunkr refuses any claim
 without `email_verified`. An account that predates Google sign-in is adopted
-by the first Google sign-in with the same address.
+by the first Google sign-in with the same address; an account that already
+belongs to one Google identity is never handed to another, even if the
+address has since been reassigned.
 
 ## Layout
 
@@ -158,26 +160,44 @@ tools/make_icons.py  regenerates the favicon and touch icon from the design toke
 tools/loadtest/      seed N students into a scratch DB, then drive them (see file docstrings)
 docs/                design system, launch checklist
 gunicorn.conf.py     production server settings
+deploy/              example systemd unit and Caddyfile
 tests/golden/        real portal PDFs used as parser ground truth
 migrations/          Alembic (SQLite now, Postgres later via ADR-2)
 ```
 
 ## Deploying for more than yourself
 
+Bunkr is one Python process, a SQLite file and a folder of PDFs, so it wants
+one small server with a disk that persists — a VPS, not a serverless platform
+that throws the filesystem away on every deploy.
+
 ```bash
-cp .env.example .env            # then fill every value in
+python -m venv .venv && .venv/bin/pip install -r requirements.txt -c requirements.lock
+cp .env.example .env            # then fill in the "Required" block
 python -c "import secrets; print(secrets.token_hex(32))"   # -> SECRET_KEY
 flask db upgrade
 gunicorn -c gunicorn.conf.py run:app
 ```
 
-`.env` is loaded automatically. With `BUNKR_CONFIG=config.ProdConfig` the app
-refuses to start unless `SECRET_KEY`, `DATABASE_URL`, `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET` and `BUNKR_TRUSTED_HOSTS` are all set — each of those
-fails quietly otherwise. Put nginx or Caddy in front with HTTPS and pass
-`X-Forwarded-For` / `-Proto` / `-Host`; the app trusts exactly one proxy hop.
-With more than one gunicorn worker, point `RATELIMIT_STORAGE_URI` at Redis so
-the sign-in throttle is shared rather than per worker.
+`.env` is loaded automatically. gunicorn runs `config.ProdConfig` unless
+`BUNKR_CONFIG` says otherwise, and production refuses to start unless
+`SECRET_KEY`, `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
+`BUNKR_TRUSTED_HOSTS` are all set — each of those fails quietly otherwise — or
+if `SECRET_KEY` is a known placeholder or shorter than 32 characters.
+
+Put a reverse proxy in front with HTTPS and pass `X-Forwarded-For` / `-Proto` /
+`-Host`; the app trusts exactly one proxy hop. `deploy/Caddyfile` does this in
+six lines and gets its own certificates; `deploy/bunkr.service` is a systemd
+unit that runs the migrations and then gunicorn. `GET /healthz` answers 200
+only when the database does, for an uptime monitor.
+
+"Today" is worked out in `BUNKR_TIMEZONE` (default `Asia/Kolkata`) whatever
+the server's clock is set to — a server left on UTC would otherwise answer
+"can I skip today?" about yesterday until 05:30.
+
+Rate limits (starting a sign-in, per address; uploading, per account) are
+counted in memory per gunicorn worker. That is fine for a first launch; point
+`RATELIMIT_STORAGE_URI` at Redis to make them exact across workers.
 
 **Upgrading past `c7f1a4b82e50` signs everyone out once.** Sessions used to
 carry the user's row id, and SQLite hands a deleted row's id to the next account

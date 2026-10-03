@@ -3,7 +3,6 @@
 Includes the isolation checks that make the multi-tenant schema real rather
 than aspirational (ADR-5) — one user must never see another's ledger.
 """
-import re
 from datetime import date, time
 from pathlib import Path
 
