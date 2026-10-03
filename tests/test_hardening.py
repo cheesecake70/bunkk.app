@@ -8,7 +8,7 @@ switch each one back on for exactly the requests that prove it works.
 import importlib
 import io
 import re
-from datetime import date, time
+from datetime import date, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -122,11 +122,12 @@ class TestCsrf:
         register(client)
         token = token_from(client.get("/settings").get_data(as_text=True))
 
-        bare = client.post("/api/absences", json={"date": "2030-01-01"})
+        soon = (date.today() + timedelta(days=30)).isoformat()
+        bare = client.post("/api/absences", json={"date": soon})
         assert bare.status_code == 400
         assert "expired" in bare.get_json()["error"].lower()
 
-        with_header = client.post("/api/absences", json={"date": "2030-01-01"},
+        with_header = client.post("/api/absences", json={"date": soon},
                                   headers={"X-CSRFToken": token})
         assert with_header.status_code != 400
 
@@ -205,34 +206,22 @@ class TestHostileUploads:
         assert resp.status_code == 413
         assert "too large" in resp.get_json()["error"].lower()
 
-    def test_two_accounts_racing_for_one_student_number(self, app, monkeypatch):
-        """Both pass the identity check; the unique index catches the second.
-        That has to come back as the same 422 the check would have given."""
+    def test_one_account_uploading_twice_at_once_is_a_422(self, app, monkeypatch):
+        """Two tabs, one file: the slower insert of the same lectures loses to
+        the unique index. That is a sentence, not a 500."""
+        from sqlalchemy.exc import IntegrityError
         from app import merge
 
-        first = app.test_client()
-        register(first, email="a@x.com", username="first")
-        assert upload(first, GOLDEN.read_bytes()).status_code == 200
+        client = app.test_client()
+        register(client)
 
-        monkeypatch.setattr(merge, "_check_identity", lambda user, report: None)
-        second = app.test_client()
-        register(second, email="b@x.com", username="second")
-        with app.app_context():
-            # Simulate the losing side of the race: the check saw nobody, but by
-            # commit time the number belongs to someone.
-            user = db.session.query(User).filter_by(email="b@x.com").one()
-            user.student_number = None
-            db.session.commit()
+        def lose_the_race(*args, **kwargs):
+            raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
 
-        def claim_then_ingest(user, report, **kw):
-            user.student_number = report.header.student_number
-            return original(user, report, **kw)
-
-        original = merge._ingest_report
-        monkeypatch.setattr(merge, "_ingest_report", claim_then_ingest)
-        resp = upload(second, GOLDEN.read_bytes())
+        monkeypatch.setattr(merge, "_ingest_report", lose_the_race)
+        resp = upload(client, GOLDEN.read_bytes())
         assert resp.status_code == 422
-        assert resp.get_json()["claimed_by"]["username"] == "first"
+        assert "clashed" in resp.get_json()["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -336,13 +325,52 @@ class TestProductionGuard:
         assert "DATABASE_URL" in str(err.value)
         assert "BUNKK_TRUSTED_HOSTS" in str(err.value)
 
+    def _boot(self, monkeypatch, secret):
+        """ProdConfig with every variable set and `secret` as the key.
+
+        config reads the environment when it is imported, so it is reloaded
+        around the boot — otherwise the result depends on whatever SECRET_KEY
+        the developer's own .env happened to hold when the suite started.
+        """
+        monkeypatch.setenv("SECRET_KEY", secret)
+        monkeypatch.setenv("DATABASE_URL", "sqlite://")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "id.apps.googleusercontent.com")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "GOCSPX-x")
+        monkeypatch.setenv("BUNKK_TRUSTED_HOSTS", "bunkk.example")
+        importlib.reload(config)
+        try:
+            return create_app(config.ProdConfig)
+        finally:
+            monkeypatch.undo()
+            importlib.reload(config)
+
     def test_the_dev_secret_is_refused(self, monkeypatch):
-        monkeypatch.setenv("SECRET_KEY", config.DEV_SECRET_KEY)
-        for name in self.REQUIRED[1:]:
-            monkeypatch.setenv(name, "set")
         with pytest.raises(RuntimeError) as err:
-            create_app("config.ProdConfig")
+            self._boot(monkeypatch, config.DEV_SECRET_KEY)
         assert "development default" in str(err.value)
+
+    def test_the_secret_the_example_file_used_to_ship_is_refused(self, monkeypatch):
+        # Long enough to pass a length check, and public: it sat in
+        # .env.example, so copying that file made a forgeable deployment.
+        with pytest.raises(RuntimeError) as err:
+            self._boot(monkeypatch, "dev-secret-key-change-in-production")
+        assert "development default" in str(err.value)
+
+    def test_a_short_secret_is_refused(self, monkeypatch):
+        with pytest.raises(RuntimeError) as err:
+            self._boot(monkeypatch, "hunter2")
+        assert "shorter than" in str(err.value)
+
+    def test_an_empty_secret_falls_back_to_the_refused_default(self, monkeypatch):
+        # `SECRET_KEY=` in .env is "set" as far as os.environ.get's default is
+        # concerned; it must not become an empty signing key.
+        monkeypatch.setenv("SECRET_KEY", "")
+        importlib.reload(config)
+        try:
+            assert config.BaseConfig.SECRET_KEY == config.DEV_SECRET_KEY
+        finally:
+            monkeypatch.undo()
+            importlib.reload(config)
 
     def test_a_complete_environment_boots(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SECRET_KEY", "y" * 64)

@@ -35,13 +35,14 @@ class User(UserMixin, db.Model):
     #: Google's stable subject id for this person. The address can change at
     #: Google; this never does. NULL only for an account that predates Google
     #: sign-in and has not signed in since (auth._user_for attaches it).
-    google_sub = db.Column(db.String(64), unique=True, index=True)
+    google_sub = db.Column(db.String(64))
     #: Chosen at sign-up; how you're known in the app.
     username = db.Column(db.String(32), unique=True, nullable=False, index=True)
-    #: Claimed from the first uploaded report. Unique: one student, one account —
-    #: otherwise two people could ingest the same report and diverge. NULL until
-    #: a report is uploaded, and SQLite allows many NULLs in a unique column.
-    student_number = db.Column(db.String(40), unique=True)
+    #: Set from the first uploaded report, and what keeps one account to one
+    #: student (merge._check_identity). Not unique: the same student may have
+    #: several accounts, each with a ledger of its own. NULL until a report
+    #: is uploaded.
+    student_number = db.Column(db.String(40))
     roll_no = db.Column(db.String(20))
     college_id = db.Column(db.Integer, db.ForeignKey("college.id"))
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -57,6 +58,10 @@ class User(UserMixin, db.Model):
                               index=True, default=new_session_token)
 
     college = db.relationship("College")
+
+    __table_args__ = (
+        db.UniqueConstraint("google_sub", name="uq_user_google_sub"),
+    )
 
     def get_id(self) -> str:
         """Flask-Login stores this in the session and the remember-me cookie."""
@@ -295,7 +300,17 @@ class PlannedAbsence(db.Model):
 
     subject = db.relationship("Subject")
 
+    # NULLs are distinct in a unique constraint, so the first one only ever
+    # guards the third tier. Each NULL tier gets a partial index of its own;
+    # without them two requests at once could store the same whole day twice.
     __table_args__ = (
         db.UniqueConstraint("user_id", "on_date", "subject_id", "start_time",
                             name="uq_planned_absence"),
+        db.Index("uq_absence_whole_day", "user_id", "on_date", unique=True,
+                 sqlite_where=db.text("subject_id IS NULL"),
+                 postgresql_where=db.text("subject_id IS NULL")),
+        db.Index("uq_absence_subject_day", "user_id", "on_date", "subject_id",
+                 unique=True,
+                 sqlite_where=db.text("subject_id IS NOT NULL AND start_time IS NULL"),
+                 postgresql_where=db.text("subject_id IS NOT NULL AND start_time IS NULL")),
     )

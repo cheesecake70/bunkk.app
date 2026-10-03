@@ -1,4 +1,5 @@
 -r requirements.txt
 pytest>=8.0
 hypothesis>=6.100
-pillow>=10.0
+pyflakes>=3.2
+pillow>=10.0     # tools/make_icons.py only

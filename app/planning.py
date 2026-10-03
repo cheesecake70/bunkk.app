@@ -55,6 +55,11 @@ from .services import (
 #: How many days the GO/SKIP strip looks ahead.
 STRIP_DAYS = 14
 
+#: The furthest ahead a semester end or checkpoint may be set. Every page
+#: projects day by day out to the horizon, so a mistyped year is not just a
+#: wrong number — it is a term several thousand years long.
+MAX_SEMESTER_DAYS = 366
+
 
 def forget_derived() -> None:
     """Drop every per-request memo derived from stored data.
@@ -228,15 +233,17 @@ def entries_from(rows) -> list[Entry]:
         try:
             kind = row.get("kind")
             subject_id = row.get("subject_id")
+            label = row.get("label")
             entry = Entry(
                 weekday=int(row["weekday"]),
                 start_time=_as_time(row["start"]),
                 end_time=_as_time(row["end"]),
                 kind=kind if kind in ("class", "break") else "class",
                 subject_id=(int(subject_id) if subject_id not in (None, "") else None),
-                label=(row.get("label") or None),
+                # Trimmed to the column's width; SQLite would store any length.
+                label=(label.strip()[:60] or None) if isinstance(label, str) else None,
             )
-        except (KeyError, TypeError, ValueError):
+        except (AttributeError, KeyError, TypeError, ValueError):
             continue
         if entry.is_valid:
             entries.append(entry)
@@ -464,7 +471,7 @@ def set_day(user, on_date: date, kind: str | None, *, name: str | None = None) -
     existing = (
         db.session.query(Holiday)
         .filter_by(semester_id=semester.id, on_date=on_date)
-        .one_or_none()
+        .first()
     )
     if kind is None:
         if existing is not None:
@@ -593,6 +600,8 @@ def add_checkpoint(user, on_date: date, label: str | None = None,
         return "A checkpoint has to be in the future."
     if semester.end_date and on_date > semester.end_date:
         return "That's after your semester ends."
+    if on_date > (today or date.today()) + timedelta(days=MAX_SEMESTER_DAYS):
+        return "That's more than a year away — check the year."
     existing = (
         db.session.query(Checkpoint)
         .filter_by(semester_id=semester.id, on_date=on_date)
@@ -602,7 +611,7 @@ def add_checkpoint(user, on_date: date, label: str | None = None,
         return "You already have a checkpoint on that date."
 
     db.session.add(Checkpoint(semester_id=semester.id, on_date=on_date,
-                              label=(label or None)))
+                              label=((label or "").strip()[:120] or None)))
     db.session.commit()
     drop(_windows)
     return None

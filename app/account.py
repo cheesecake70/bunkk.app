@@ -11,6 +11,7 @@ import shutil
 
 from flask import Blueprint, current_app, flash, redirect, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
+from sqlalchemy.exc import IntegrityError
 
 from . import db
 from .auth import normalise_username, validate_username
@@ -53,7 +54,13 @@ def update_profile():
             return redirect(url_for("core.settings"))
         current_user.username = username
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Someone else took the name between the check above and the commit.
+        db.session.rollback()
+        flash("That username is taken.", "error")
+        return redirect(url_for("core.settings"))
     flash("Profile saved.")
     return redirect(url_for("core.settings"))
 

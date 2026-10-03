@@ -16,9 +16,10 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.routing import IntegerConverter
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -52,6 +53,19 @@ def _sqlite_pragmas(dbapi_connection, connection_record):
     cursor.close()
 
 
+class RowIdConverter(IntegerConverter):
+    """`<int:...>` in a URL, capped at what a database id can be.
+
+    Werkzeug's own accepts any run of digits, and a thirty-digit "id" then
+    reaches the driver as a number it cannot bind — a 500 for what is plainly
+    a page that doesn't exist. Out of range, the URL simply doesn't match.
+    """
+
+    def __init__(self, map, fixed_digits=0, min=None, max=None, signed=False):
+        super().__init__(map, fixed_digits=fixed_digits, min=min,
+                         max=2 ** 63 - 1 if max is None else max, signed=signed)
+
+
 def create_app(config_object=None) -> Flask:
     # Templates and static assets live at the repo root, beside the app package.
     app = Flask(
@@ -61,9 +75,10 @@ def create_app(config_object=None) -> Flask:
         static_folder="../static",
     )
 
-    app.config.from_object(config_object or os.environ.get(
-        "BUNKK_CONFIG", "config.DevConfig"
-    ))
+    app.config.from_object(
+        config_object or os.environ.get("BUNKK_CONFIG") or "config.DevConfig"
+    )
+    app.url_map.converters["int"] = RowIdConverter
     os.makedirs(app.instance_path, exist_ok=True)
     _check_environment(app)
     _configure_logging(app)
@@ -137,7 +152,7 @@ def _check_environment(app: Flask) -> None:
     client means nobody can sign in at all, and no trusted host lets a forged
     Host header write the OAuth redirect URL.
     """
-    from config import DEV_SECRET_KEY
+    from config import DEV_SECRET_KEY, MIN_SECRET_KEY_LENGTH, PLACEHOLDER_SECRET_KEYS
 
     missing = [name for name in app.config.get("REQUIRED_ENV", ())
                if not os.environ.get(name)]
@@ -147,25 +162,27 @@ def _check_environment(app: Flask) -> None:
             + ". See .env.example."
         )
 
-    if (
-        app.config["SECRET_KEY"] == DEV_SECRET_KEY
-        and not app.debug
-        and not app.testing
-    ):
+    if app.debug or app.testing:
+        return
+
+    generate = (
+        "Generate one with "
+        "`python -c \"import secrets; print(secrets.token_hex(32))\"` and "
+        "set it in the environment before serving real users."
+    )
+    secret = app.config["SECRET_KEY"] or ""
+    if secret == DEV_SECRET_KEY or secret in PLACEHOLDER_SECRET_KEYS:
+        raise RuntimeError("SECRET_KEY is still the development default. " + generate)
+    if len(secret) < MIN_SECRET_KEY_LENGTH:
         raise RuntimeError(
-            "SECRET_KEY is still the development default. Generate one with "
-            "`python -c \"import secrets; print(secrets.token_hex(32))\"` and "
-            "set it in the environment before serving real users."
+            f"SECRET_KEY is shorter than {MIN_SECRET_KEY_LENGTH} characters, "
+            "which is short enough to guess. " + generate
         )
 
 
 def _configure_logging(app: Flask) -> None:
-    """Logs go wherever gunicorn's do, and nothing is dropped at INFO.
-
-    INFO matters outside production too: with no mail server configured the
-    reset and verification links are *logged* rather than sent, and a dev
-    server started without the debugger left them at a level nobody saw.
-    """
+    """Logs go wherever gunicorn's do (stderr, for the process manager to
+    collect), and nothing is dropped at INFO."""
     if app.testing:
         return
     gunicorn_logger = logging.getLogger("gunicorn.error")
@@ -191,7 +208,7 @@ def _same_site(url: str | None) -> str | None:
     if parts.netloc and parts.netloc != request.host:
         return None
     path = parts.path or "/"
-    if not path.startswith("/") or path.startswith("//"):
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
         return None
     return path + (f"?{parts.query}" if parts.query else "")
 
@@ -241,6 +258,21 @@ def _register_error_handlers(app: Flask) -> None:
         return (f"<!doctype html><title>Busy</title><h1>One moment</h1><p>{message}</p>",
                 503, headers)
 
+    @app.errorhandler(IntegrityError)
+    def clashed(error):
+        # Two requests wrote the same thing at once and a unique index let one
+        # through. The endpoints where that is routine retry by themselves
+        # (api.idempotent); this is the answer for the rest — a username both
+        # of two people just picked, say.
+        db.session.rollback()
+        app.logger.warning("Write clashed on %s %s: %s",
+                           request.method, request.path, error.orig)
+        message = "That clashed with another change. Reload and try again."
+        if _wants_json():
+            return jsonify(error=message), 409
+        flash(message, "error")
+        return redirect(_same_site(request.referrer) or "/")
+
     if app.testing:
         # Tests want the traceback, not a tidy 500.
         return
@@ -279,6 +311,11 @@ def _register_security_headers(app: Flask) -> None:
             "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
             "object-src 'none'",
         )
+        # Pages and API answers are one student's attendance. Without this a
+        # shared laptop shows them again on Back after signing out, straight
+        # from the browser's cache. Static files keep their normal caching.
+        if request.endpoint != "static":
+            headers.setdefault("Cache-Control", "no-store")
         if hsts:
             headers.setdefault("Strict-Transport-Security",
                                "max-age=31536000; includeSubDomains")

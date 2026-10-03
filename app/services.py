@@ -103,8 +103,13 @@ def apply_subject_edits(subject: Subject, siblings: list[Subject],
     """
     errors: dict[str, str] = {}
 
+    def text(field: str) -> str:
+        # JSON can put anything here; only a string is a name.
+        value = values.get(field)
+        return value.strip() if isinstance(value, str) else ""
+
     if "name" in values:
-        name = (values.get("name") or "").strip()
+        name = text("name")
         if not name:
             errors["name"] = "A subject needs a name."
         elif len(name) > 200:
@@ -113,7 +118,7 @@ def apply_subject_edits(subject: Subject, siblings: list[Subject],
             subject.canonical_name = name
 
     if "code" in values:
-        code = (values.get("code") or "").strip()
+        code = text("code")
         if not code:
             errors["code"] = "A short code keeps the tables readable."
         elif len(code) > 20:
@@ -132,7 +137,9 @@ def apply_subject_edits(subject: Subject, siblings: list[Subject],
                 subject.code = code
 
     if "custom_limit" in values:
-        raw = str(values.get("custom_limit") or "").strip()
+        raw = values.get("custom_limit")
+        # `0` is a limit, not a blank — only None and "" mean "use the default".
+        raw = "" if raw is None or isinstance(raw, bool) else str(raw).strip()
         if not raw:
             subject.custom_limit = None        # blank means "use the default"
         else:
