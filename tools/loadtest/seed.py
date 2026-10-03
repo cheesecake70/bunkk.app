@@ -1,7 +1,7 @@
 """N verified students, each with a realistic ledger, timetable and term end.
 
-usage: DATABASE_URL=sqlite:////tmp/load.db BUNKR_UPLOAD_DIR=/tmp/load_uploads \\
-           BUNKR_CONFIG=config.DevConfig python tools/loadtest/seed.py 200
+usage: DATABASE_URL=sqlite:////tmp/load.db BUNKK_UPLOAD_DIR=/tmp/load_uploads \\
+           BUNKK_CONFIG=config.DevConfig python tools/loadtest/seed.py 200
 
 Never point this at a real database: it creates a College row and N accounts.
 """
@@ -48,7 +48,7 @@ app = create_app()
 with app.app_context():
     upgrade(directory=os.path.join(REPO, "migrations"))
     college = College(name="SVKM"); db.session.add(college); db.session.commit()
-    pdf_dir = Path(os.environ.get("BUNKR_LOAD_PDFS", os.path.join(REPO, "instance", "load_pdfs"))); pdf_dir.mkdir(exist_ok=True)
+    pdf_dir = Path(os.environ.get("BUNKK_LOAD_PDFS", os.path.join(REPO, "instance", "load_pdfs"))); pdf_dir.mkdir(exist_ok=True)
     t0 = time.time()
     for i in range(N):
         user = User(email=f"student{i}@example.com", username=f"student{i}", college_id=college.id)

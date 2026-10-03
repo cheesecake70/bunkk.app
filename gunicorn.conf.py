@@ -15,21 +15,21 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # gunicorn is the production server, so production is what it runs unless told
-# otherwise. Left to the app's own default, a missing or misspelt BUNKR_CONFIG
+# otherwise. Left to the app's own default, a missing or misspelt BUNKK_CONFIG
 # would quietly serve real users in debug mode with the development secret;
 # this way the same mistake stops at boot, naming what is missing.
-if not os.environ.get("BUNKR_CONFIG"):
-    os.environ["BUNKR_CONFIG"] = "config.ProdConfig"
-elif os.environ["BUNKR_CONFIG"] != "config.ProdConfig":
+if not os.environ.get("BUNKK_CONFIG"):
+    os.environ["BUNKK_CONFIG"] = "config.ProdConfig"
+elif os.environ["BUNKK_CONFIG"] != "config.ProdConfig":
     # Allowed — the load test drives a debug build through gunicorn — but
     # never silently: this is the line to find when a server misbehaves.
-    print(f"WARNING: gunicorn is serving {os.environ['BUNKR_CONFIG']}, "
+    print(f"WARNING: gunicorn is serving {os.environ['BUNKK_CONFIG']}, "
           "not config.ProdConfig. Never do this for real users.", file=sys.stderr)
 
-bind = os.environ.get("BUNKR_BIND", "127.0.0.1:8000")
+bind = os.environ.get("BUNKK_BIND", "127.0.0.1:8000")
 workers = int(os.environ.get("WEB_CONCURRENCY") or min(4, multiprocessing.cpu_count() * 2 + 1))
 worker_class = "gthread"
-threads = int(os.environ.get("BUNKR_THREADS") or 4)
+threads = int(os.environ.get("BUNKK_THREADS") or 4)
 timeout = 60
 graceful_timeout = 30
 keepalive = 5

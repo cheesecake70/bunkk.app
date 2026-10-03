@@ -51,8 +51,8 @@ def healthz():
         db.session.execute(text("SELECT 1"))
     except SQLAlchemyError:
         current_app.logger.exception("healthz: database unreachable")
-        return jsonify(status="error", app="bunkr"), 503
-    return jsonify(status="ok", app="bunkr")
+        return jsonify(status="error", app="bunkk"), 503
+    return jsonify(status="ok", app="bunkk")
 
 
 def _week_around(focus: date, today: date) -> list[date]:
@@ -73,13 +73,15 @@ def _week_around(focus: date, today: date) -> list[date]:
 
 
 @bp.get("/")
-@login_required
 def dashboard():
     """Today: one question — can I skip today?
 
     Everything semester-wide lives on /plan. What is left here is the day in
-    front of you, and the arrows to walk the rest of this week.
+    front of you, and the arrows to walk the rest of this week. Signed out,
+    this address is the public landing page instead.
     """
+    if not current_user.is_authenticated:
+        return render_template("landing.html")
     dash = dashboard_for(current_user)
     ready, next_step = planning.advanced_ready(current_user)
     today = date.today()

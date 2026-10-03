@@ -1,11 +1,11 @@
 """Authentication — Google sign-in only (ADR-5, revised).
 
-There is no password anywhere in Bunkr. Signing in means proving to Google
+There is no password anywhere in Bunkk. Signing in means proving to Google
 that you own an address, and Google telling us so in a signed ID token. That
 one decision removes every password-shaped problem this module used to carry:
 no hashes, no lockouts, no reset mail, no verification links, no dummy-hash
 timing games. What is left is small — start the OpenID Connect dance, finish
-it, and map the address Google vouches for onto one Bunkr account.
+it, and map the address Google vouches for onto one Bunkk account.
 
 Which *student* an account is for comes from the first report uploaded into
 it (merge.py); this module only settles who is at the keyboard.
@@ -38,7 +38,7 @@ bp = Blueprint("auth", __name__)
 #: Google is hard-coded. The client lives on the app (`init_app`), not at
 #: module level, so every `create_app` gets its own.
 GOOGLE_DISCOVERY = "https://accounts.google.com/.well-known/openid-configuration"
-OAUTH_EXT = "bunkr_oauth"
+OAUTH_EXT = "bunkk_oauth"
 
 #: Letters, digits, underscore and dot — recognisable and safe in a URL later.
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{3,32}$")
@@ -57,7 +57,7 @@ GOOGLE_TIMEOUT = 10
 
 class AccountConflict(Exception):
     """The address Google vouched for already belongs to a different Google
-    identity's Bunkr account."""
+    identity's Bunkk account."""
 
 
 def init_app(app) -> None:
@@ -208,7 +208,7 @@ def google_callback():
 
     target = session.pop(NEXT_KEY, None)
     if created:
-        flash(f"Welcome to Bunkr. You're @{user.username} — change that any time in Settings.")
+        flash(f"Welcome to Bunkk. You're @{user.username} — change that any time in Settings.")
         return redirect(url_for("core.upload"))
     return redirect(target or url_for("core.dashboard"))
 
@@ -219,7 +219,7 @@ def dev_login():
 
     Exists so a laptop with no OAuth client, and the load-test harness, can
     still get past the front door. Refused unless the app is in DEBUG *and*
-    `BUNKR_DEV_LOGIN=1` is set: two switches, because one of them being on
+    `BUNKK_DEV_LOGIN=1` is set: two switches, because one of them being on
     in production would otherwise be a wide-open door.
     """
     if not (current_app.debug and current_app.config.get("DEV_LOGIN")):

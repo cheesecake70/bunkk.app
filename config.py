@@ -1,4 +1,4 @@
-"""Configuration objects. Select with BUNKR_CONFIG env var.
+"""Configuration objects. Select with BUNKK_CONFIG env var.
 
 A `.env` file beside this module is loaded first, so a deployment only ever
 has to fill in `.env.example`. Real environment variables win over the file.
@@ -21,12 +21,12 @@ def _set_timezone() -> None:
     "can I skip today?" about yesterday. The process's own zone is set here,
     once, so nothing downstream has to think about it.
     """
-    name = os.environ.get("BUNKR_TIMEZONE") or "Asia/Kolkata"
+    name = os.environ.get("BUNKK_TIMEZONE") or "Asia/Kolkata"
     try:
         ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise RuntimeError(
-            f"BUNKR_TIMEZONE={name!r} is not a timezone this machine knows. "
+            f"BUNKK_TIMEZONE={name!r} is not a timezone this machine knows. "
             "Use an IANA name such as Asia/Kolkata."
         ) from exc
     os.environ["TZ"] = name
@@ -68,7 +68,7 @@ def _database_url(value: str) -> str:
     """Normalise DATABASE_URL into something SQLAlchemy opens as written.
 
     Two spellings bite at deploy time. A relative SQLite path
-    (`sqlite:///instance/bunkr.db`) is resolved by Flask-SQLAlchemy against
+    (`sqlite:///instance/bunkk.db`) is resolved by Flask-SQLAlchemy against
     the instance folder, landing in `instance/instance/` — a directory that
     doesn't exist. And hosting platforms hand out `postgres://`, a scheme
     SQLAlchemy stopped accepting.
@@ -87,7 +87,7 @@ class BaseConfig:
     SECRET_KEY = os.environ.get("SECRET_KEY") or DEV_SECRET_KEY
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_DIR = _path(
-        os.environ.get("BUNKR_UPLOAD_DIR") or os.path.join("instance", "uploads")
+        os.environ.get("BUNKK_UPLOAD_DIR") or os.path.join("instance", "uploads")
     )
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5 MB — reports are ~25-400 KB
 
@@ -103,12 +103,12 @@ class BaseConfig:
 
     # Google sign-in (the only way in). Created in Google Cloud Console; see
     # README "Google sign-in". Missing in dev, the app still boots and the
-    # sign-in button says it couldn't reach Google; use BUNKR_DEV_LOGIN there.
+    # sign-in button says it couldn't reach Google; use BUNKK_DEV_LOGIN there.
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
     #: /login/dev — sign in as any address without Google. Only honoured in
     #: DEBUG (see auth.dev_login); a laptop without an OAuth client needs it.
-    DEV_LOGIN = _bool("BUNKR_DEV_LOGIN", "0")
+    DEV_LOGIN = _bool("BUNKK_DEV_LOGIN", "0")
 
     #: Environment variables `create_app` insists on. Empty outside production.
     REQUIRED_ENV: tuple[str, ...] = ()
@@ -119,7 +119,7 @@ class BaseConfig:
 class DevConfig(BaseConfig):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = _database_url(
-        os.environ.get("DATABASE_URL") or "sqlite:///instance/bunkr.db"
+        os.environ.get("DATABASE_URL") or "sqlite:///instance/bunkk.db"
     )
 
 
@@ -141,7 +141,7 @@ class ProdConfig(BaseConfig):
     DEV_LOGIN = False
     SQLALCHEMY_DATABASE_URI = _database_url(os.environ.get("DATABASE_URL", ""))
     # Self-hosted deployment: gunicorn behind nginx/Caddy with HTTPS.
-    BEHIND_PROXY = _bool("BUNKR_BEHIND_PROXY", "1")
+    BEHIND_PROXY = _bool("BUNKK_BEHIND_PROXY", "1")
     PREFERRED_URL_SCHEME = "https"
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
@@ -154,12 +154,12 @@ class ProdConfig(BaseConfig):
     # Hosts this app will answer for. Anything else is refused before a
     # OAuth redirect URL can be built from a forged Host header.
     TRUSTED_HOSTS = [
-        h.strip() for h in os.environ.get("BUNKR_TRUSTED_HOSTS", "").split(",")
+        h.strip() for h in os.environ.get("BUNKK_TRUSTED_HOSTS", "").split(",")
         if h.strip()
     ] or None
     REQUIRED_ENV = (
         "SECRET_KEY", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
-        "BUNKR_TRUSTED_HOSTS",
+        "BUNKK_TRUSTED_HOSTS",
     )
     # The boot-time guard lives in create_app: Flask's from_object reads class
     # attributes without instantiating, so a check in __init__ would never run.

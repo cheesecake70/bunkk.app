@@ -6,7 +6,7 @@ usage: python tools/loadtest/run.py [users] [seconds] [host:port] [burst]
 `burst` makes every student upload a report at the same instant instead of
 browsing — the worst case for SQLite's single writer. Seed the target first
 with seed.py; the students are student<N>@example.com, signed in through
-/login/dev (run the server with BUNKR_DEV_LOGIN=1 in debug mode). The
+/login/dev (run the server with BUNKK_DEV_LOGIN=1 in debug mode). The
 client ignores the Secure cookie flag so it can drive a production-shaped
 server over plain http on localhost.
 """
@@ -20,7 +20,7 @@ SECONDS = int(sys.argv[2]) if len(sys.argv) > 2 else 60
 HOST, PORT = (sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1:8001").split(":")
 BURST = len(sys.argv) > 4 and sys.argv[4] == "burst"
 import os
-PDFS = Path(os.environ.get("BUNKR_LOAD_PDFS", Path(__file__).resolve().parents[2] / "instance" / "load_pdfs"))
+PDFS = Path(os.environ.get("BUNKK_LOAD_PDFS", Path(__file__).resolve().parents[2] / "instance" / "load_pdfs"))
 
 stats = defaultdict(list)          # action -> [latency_ms]
 errors = defaultdict(list)         # action -> [(status, snippet)]
@@ -82,7 +82,7 @@ class Student:
 
     def upload(self):
         pdf = (PDFS / f"student{self.i}.pdf").read_bytes() + f"\n%{uuid.uuid4().hex}\n".encode()
-        boundary = "----bunkr" + uuid.uuid4().hex
+        boundary = "----bunkk" + uuid.uuid4().hex
         body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"report\"; "
                 f"filename=\"report.pdf\"\r\nContent-Type: application/pdf\r\n\r\n").encode() \
                + pdf + f"\r\n--{boundary}--\r\n".encode()

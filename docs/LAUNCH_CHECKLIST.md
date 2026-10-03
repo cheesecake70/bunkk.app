@@ -8,14 +8,14 @@ covered by a test where one makes sense.
 - [x] CSRF protection on every form and JSON call (Flask-WTF `CSRFProtect`,
       token in a `<meta>` tag, sent as `X-CSRFToken` by `static/js/api.js`).
 - [x] The OAuth redirect URL can no longer be poisoned through the Host header
-      (`TRUSTED_HOSTS` from `BUNKR_TRUSTED_HOSTS`, `ProxyFix`, https scheme).
+      (`TRUSTED_HOSTS` from `BUNKK_TRUSTED_HOSTS`, `ProxyFix`, https scheme).
 - [x] A corrupt or non-PDF upload answers 422, never 500.
 - [x] Per-IP rate limit on starting a Google sign-in (Flask-Limiter; storage
       from `RATELIMIT_STORAGE_URI`). Finishing one is never throttled, so a
       campus NAT can't lock a hostel out.
 - [x] Remember-me cookie is `Secure`, `HttpOnly`, `SameSite=Lax` in production.
 - [x] Production refuses to boot without `SECRET_KEY`, `DATABASE_URL`,
-      `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `BUNKR_TRUSTED_HOSTS`.
+      `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `BUNKK_TRUSTED_HOSTS`.
 - [x] Golden test PDFs carry a fictional student instead of a real one.
 - [x] No passwords at all: sign-in is Google (OpenID Connect) only, and a
       claim without `email_verified` is refused, so nobody can squat on
@@ -66,9 +66,9 @@ which is the trigger ADR-2 already names.
       year used to take `/`, `/plan` and `/calendar` down for that account.
 - [x] `SECRET_KEY` placeholders (including the one `.env.example` used to
       ship) and keys under 32 characters are refused in production.
-- [x] gunicorn runs `ProdConfig` unless `BUNKR_CONFIG` says otherwise, so a
+- [x] gunicorn runs `ProdConfig` unless `BUNKK_CONFIG` says otherwise, so a
       missing or misspelt variable stops at boot instead of serving in debug.
-- [x] A relative `DATABASE_URL` / `BUNKR_UPLOAD_DIR` resolves against the
+- [x] A relative `DATABASE_URL` / `BUNKK_UPLOAD_DIR` resolves against the
       repository, not `instance/instance/` or the working directory.
 - [x] Calls to Google carry a 10 s timeout; Google being unreachable is a
       sentence on the sign-in page, not a 500.
@@ -86,7 +86,7 @@ which is the trigger ADR-2 already names.
       in the check before the insert (migration `a9c4e17b3d52`, which also
       collapses any duplicates already stored).
 - [x] An id in a URL too large for the database is a 404.
-- [x] "Today" is worked out in `BUNKR_TIMEZONE` (default Asia/Kolkata), so a
+- [x] "Today" is worked out in `BUNKK_TIMEZONE` (default Asia/Kolkata), so a
       server on UTC doesn't answer about yesterday until 05:30.
 - [x] Pages and API answers are `Cache-Control: no-store`; signing out on a
       shared laptop leaves nothing behind the Back button.
@@ -108,7 +108,7 @@ which is the trigger ADR-2 already names.
   report PDF can upload it into an account of their own and see that
   attendance. Accounts never see each other's data.
 - `/login/dev` signs in as any address without Google. It answers 404
-  unless the app is in debug mode *and* `BUNKR_DEV_LOGIN=1`; production never
+  unless the app is in debug mode *and* `BUNKK_DEV_LOGIN=1`; production never
   runs in debug mode.
 
 ## Operator steps at deploy time

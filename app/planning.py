@@ -595,7 +595,7 @@ def add_checkpoint(user, on_date: date, label: str | None = None,
     """Add an audit date. Returns an error message, or None on success."""
     semester = active_semester(user)
     if semester is None:
-        return "Upload a report first — Bunkr needs to know your semester."
+        return "Upload a report first — Bunkk needs to know your semester."
     if on_date <= (today or date.today()):
         return "A checkpoint has to be in the future."
     if semester.end_date and on_date > semester.end_date:

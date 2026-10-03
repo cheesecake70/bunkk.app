@@ -1,4 +1,4 @@
-# Bunkr
+# Bunkk
 
 Attendance calculator & manager for university students. Upload your college
 attendance PDF → know exactly what you can skip.
@@ -106,22 +106,22 @@ and never describes a day with nothing left to decide.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt -c requirements.lock
-flask db upgrade                  # create/upgrade instance/bunkr.db
+flask db upgrade                  # create/upgrade instance/bunkk.db
 python -m pytest tests/ -q        # should be all green
 python run.py                     # http://127.0.0.1:5000
 ```
 
 Sign in with Google at `/login` (set up below), or run with
-`BUNKR_DEV_LOGIN=1` and use `/login/dev` to sign in as any address without
+`BUNKK_DEV_LOGIN=1` and use `/login/dev` to sign in as any address without
 Google. Then drop a detailed-report PDF on `/upload`.
 
 ### Google sign-in
 
-Bunkr signs people in through Google (OpenID Connect via Authlib) and has no
+Bunkk signs people in through Google (OpenID Connect via Authlib) and has no
 passwords of its own. It needs one OAuth client from Google Cloud Console:
 
 1. <https://console.cloud.google.com/> → create a project (or pick one).
-2. **APIs & Services → OAuth consent screen**: External, app name "Bunkr",
+2. **APIs & Services → OAuth consent screen**: External, app name "Bunkk",
    your support email, scopes `openid`, `email`, `profile`. While the app is
    in *Testing* only listed test users can sign in; **Publish** it so any
    Google account can.
@@ -129,11 +129,11 @@ passwords of its own. It needs one OAuth client from Google Cloud Console:
    type *Web application*. Add an **Authorised redirect URI** for every host
    you serve from — the path is always `/auth/google/callback`:
    `http://localhost:5000/auth/google/callback` for dev,
-   `https://bunkr.example.com/auth/google/callback` in production.
+   `https://bunkk.example.com/auth/google/callback` in production.
 4. Copy the client ID and secret into `.env` as `GOOGLE_CLIENT_ID` and
    `GOOGLE_CLIENT_SECRET`.
 
-Google only vouches for verified addresses, and Bunkr refuses any claim
+Google only vouches for verified addresses, and Bunkk refuses any claim
 without `email_verified`. An account that predates Google sign-in is adopted
 by the first Google sign-in with the same address; an account that already
 belongs to one Google identity is never handed to another, even if the
@@ -167,7 +167,7 @@ migrations/          Alembic (SQLite now, Postgres later via ADR-2)
 
 ## Deploying for more than yourself
 
-Bunkr is one Python process, a SQLite file and a folder of PDFs, so it wants
+Bunkk is one Python process, a SQLite file and a folder of PDFs, so it wants
 one small server with a disk that persists — a VPS, not a serverless platform
 that throws the filesystem away on every deploy.
 
@@ -180,18 +180,18 @@ gunicorn -c gunicorn.conf.py run:app
 ```
 
 `.env` is loaded automatically. gunicorn runs `config.ProdConfig` unless
-`BUNKR_CONFIG` says otherwise, and production refuses to start unless
+`BUNKK_CONFIG` says otherwise, and production refuses to start unless
 `SECRET_KEY`, `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
-`BUNKR_TRUSTED_HOSTS` are all set — each of those fails quietly otherwise — or
+`BUNKK_TRUSTED_HOSTS` are all set — each of those fails quietly otherwise — or
 if `SECRET_KEY` is a known placeholder or shorter than 32 characters.
 
 Put a reverse proxy in front with HTTPS and pass `X-Forwarded-For` / `-Proto` /
 `-Host`; the app trusts exactly one proxy hop. `deploy/Caddyfile` does this in
-six lines and gets its own certificates; `deploy/bunkr.service` is a systemd
+six lines and gets its own certificates; `deploy/bunkk.service` is a systemd
 unit that runs the migrations and then gunicorn. `GET /healthz` answers 200
 only when the database does, for an uptime monitor.
 
-"Today" is worked out in `BUNKR_TIMEZONE` (default `Asia/Kolkata`) whatever
+"Today" is worked out in `BUNKK_TIMEZONE` (default `Asia/Kolkata`) whatever
 the server's clock is set to — a server left on UTC would otherwise answer
 "can I skip today?" about yesterday until 05:30.
 
@@ -204,14 +204,14 @@ carry the user's row id, and SQLite hands a deleted row's id to the next account
 created — so a leftover cookie could reach a stranger's ledger. They carry a
 random token now; the old cookies match nothing and resolve to a login page.
 
-Back up `instance/bunkr.db` *and* `instance/uploads/` together —
+Back up `instance/bunkk.db` *and* `instance/uploads/` together —
 the ledger is replayable from the snapshots only if the PDFs survive with it.
 
 Two SQLite notes. Its DDL isn't transactional, so a migration that fails
 part-way leaves the half-created table behind while the revision stays at the
 old version — drop the stray table before re-running `flask db upgrade`. And in
-WAL mode the database is three files: never move or copy `bunkr.db` without
-`bunkr.db-wal` beside it, or you silently lose everything not yet
+WAL mode the database is three files: never move or copy `bunkk.db` without
+`bunkk.db-wal` beside it, or you silently lose everything not yet
 checkpointed.
 
 ## Next (the rest of opening up)

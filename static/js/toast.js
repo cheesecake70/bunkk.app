@@ -94,5 +94,5 @@
     }, DISMISS_MS);
   }
 
-  window.BunkrToast = { show: showToast, error: showError };
+  window.BunkkToast = { show: showToast, error: showError };
 })();

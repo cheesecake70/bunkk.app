@@ -394,28 +394,28 @@ class TestSignIn:
 class TestConfiguration:
     def test_a_relative_sqlite_path_is_anchored_to_the_repo(self):
         # Flask-SQLAlchemy resolves a relative path against instance/, which
-        # turned the documented value into instance/instance/bunkr.db.
-        url = config._database_url("sqlite:///instance/bunkr.db")
-        assert url == "sqlite:///" + str(Path(config.BASEDIR) / "instance" / "bunkr.db")
+        # turned the documented value into instance/instance/bunkk.db.
+        url = config._database_url("sqlite:///instance/bunkk.db")
+        assert url == "sqlite:///" + str(Path(config.BASEDIR) / "instance" / "bunkk.db")
 
     @pytest.mark.parametrize("url", [
-        "sqlite://", "sqlite:///:memory:", "sqlite:////var/lib/bunkr/bunkr.db",
-        "postgresql://u:p@db/bunkr", "",
+        "sqlite://", "sqlite:///:memory:", "sqlite:////var/lib/bunkk/bunkk.db",
+        "postgresql://u:p@db/bunkk", "",
     ])
     def test_other_database_urls_pass_through(self, url):
         assert config._database_url(url) == url
 
     def test_the_scheme_hosting_platforms_hand_out_is_accepted(self):
-        assert config._database_url("postgres://u:p@db/bunkr") == "postgresql://u:p@db/bunkr"
+        assert config._database_url("postgres://u:p@db/bunkk") == "postgresql://u:p@db/bunkk"
 
     def test_the_upload_directory_does_not_depend_on_the_working_directory(self):
         assert config._path("instance/uploads") == str(
             Path(config.BASEDIR) / "instance" / "uploads")
-        assert config._path("/srv/bunkr/uploads") == "/srv/bunkr/uploads"
+        assert config._path("/srv/bunkk/uploads") == "/srv/bunkk/uploads"
 
     def test_production_never_offers_dev_login(self, monkeypatch):
         import importlib
-        monkeypatch.setenv("BUNKR_DEV_LOGIN", "1")
+        monkeypatch.setenv("BUNKK_DEV_LOGIN", "1")
         importlib.reload(config)
         try:
             assert config.ProdConfig.DEV_LOGIN is False
@@ -430,17 +430,17 @@ class TestConfiguration:
         import os
         import runpy
         if given is None:
-            monkeypatch.delenv("BUNKR_CONFIG", raising=False)
+            monkeypatch.delenv("BUNKK_CONFIG", raising=False)
         else:
-            monkeypatch.setenv("BUNKR_CONFIG", given)
+            monkeypatch.setenv("BUNKK_CONFIG", given)
         with patch("dotenv.load_dotenv"):
             runpy.run_path(str(Path(config.BASEDIR) / "gunicorn.conf.py"))
-            assert os.environ["BUNKR_CONFIG"] == "config.ProdConfig"
-        monkeypatch.delenv("BUNKR_CONFIG", raising=False)
+            assert os.environ["BUNKK_CONFIG"] == "config.ProdConfig"
+        monkeypatch.delenv("BUNKK_CONFIG", raising=False)
 
     def test_gunicorn_says_so_when_told_to_serve_debug(self, monkeypatch, capsys):
         import runpy
-        monkeypatch.setenv("BUNKR_CONFIG", "config.DevConfig")
+        monkeypatch.setenv("BUNKK_CONFIG", "config.DevConfig")
         with patch("dotenv.load_dotenv"):
             runpy.run_path(str(Path(config.BASEDIR) / "gunicorn.conf.py"))
         assert "not config.ProdConfig" in capsys.readouterr().err
@@ -449,10 +449,10 @@ class TestConfiguration:
         """Copying .env.example and starting gunicorn must give production;
         a value here would pre-empt gunicorn's default."""
         lines = (Path(config.BASEDIR) / ".env.example").read_text().splitlines()
-        assert "BUNKR_CONFIG=" in lines
+        assert "BUNKK_CONFIG=" in lines
 
     def test_a_blank_config_name_means_the_default(self, monkeypatch):
-        monkeypatch.setenv("BUNKR_CONFIG", "")
+        monkeypatch.setenv("BUNKK_CONFIG", "")
         assert create_app().config["DEBUG"] is True
 
 
@@ -463,7 +463,7 @@ class TestConfiguration:
 
 class TestHealth:
     def test_healthy_means_the_database_answers(self, app):
-        assert app.test_client().get("/healthz").get_json() == {"status": "ok", "app": "bunkr"}
+        assert app.test_client().get("/healthz").get_json() == {"status": "ok", "app": "bunkk"}
 
     def test_an_unreachable_database_is_not_ok(self, app):
         boom = OperationalError("SELECT 1", {}, Exception("unable to open database file"))
@@ -642,7 +642,7 @@ class TestTimezone:
     def test_today_is_the_colleges_today(self, monkeypatch):
         import importlib
         import time as clock
-        monkeypatch.setenv("BUNKR_TIMEZONE", "Asia/Kolkata")
+        monkeypatch.setenv("BUNKK_TIMEZONE", "Asia/Kolkata")
         monkeypatch.setenv("TZ", "UTC")
         importlib.reload(config)
         try:
@@ -652,6 +652,6 @@ class TestTimezone:
             importlib.reload(config)
 
     def test_a_misspelt_zone_stops_the_boot(self, monkeypatch):
-        monkeypatch.setenv("BUNKR_TIMEZONE", "Asia/Mumbay")
-        with pytest.raises(RuntimeError, match="BUNKR_TIMEZONE"):
+        monkeypatch.setenv("BUNKK_TIMEZONE", "Asia/Mumbay")
+        with pytest.raises(RuntimeError, match="BUNKK_TIMEZONE"):
             config._set_timezone()

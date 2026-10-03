@@ -3,7 +3,7 @@
 
    Plan asks the same ladder question through a picker; here the subject is
    already the page, so the picker collapses to a single toggle. The answer
-   itself is BunkrLadder's — this file only decides when to ask for it. */
+   itself is BunkkLadder's — this file only decides when to ask for it. */
 (function () {
   "use strict";
 
@@ -15,7 +15,7 @@
   if (page) {
     var subjectId = parseInt(page.dataset.subjectPage, 10);
 
-    document.addEventListener("bunkr:stats", function (event) {
+    document.addEventListener("bunkk:stats", function (event) {
       var stats = event.detail || {};
       var subject = (stats.subjects || []).filter(function (s) {
         return s.id === subjectId;
@@ -78,7 +78,7 @@
        reloads the page — so once fetched it stays good for this visit. */
     if (loaded) return;
     toggle.classList.add("is-loading");
-    window.BunkrLadder
+    window.BunkkLadder
       .load(host, toggle.dataset.subject, { lead: "short" })
       .then(function (ok) {
         toggle.classList.remove("is-loading");

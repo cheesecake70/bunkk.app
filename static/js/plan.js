@@ -41,7 +41,7 @@
   }
 
   if (grid) {
-    var sheet = window.BunkrDaySheet.mount({
+    var sheet = window.BunkkDaySheet.mount({
       cellSelector: ".plan-month .cal__day",
       countClass: "cal__count mono",
       onChange: function (payload) {
@@ -77,12 +77,9 @@
      all been guessed must not still be badged "9 pending". */
   function badge(subject, plan) {
     var verdict = plan ? plan.verdict : subject.verdict;
-    var headroom = plan ? plan.budget : subject.can_miss;
 
     if (verdict === "safe") return ["safe", "Safe"];
-    if (verdict === "warn") {
-      return ["warn", headroom === 0 ? "No slack yet" : "Tight"];
-    }
+    if (verdict === "warn") return ["warn", "Tight"];
     if (subject.pending_dominated) {
       return ["pending", subject.pending + " pending"];
     }
@@ -90,7 +87,7 @@
     return ["neutral", "No data"];
   }
 
-  document.addEventListener("bunkr:stats", function (event) {
+  document.addEventListener("bunkk:stats", function (event) {
     var stats = event.detail || {};
 
     var overall = document.querySelector('[data-stat="overall_worst"]');
@@ -126,7 +123,7 @@
       if (status) {
         var pair = badge(subject, plan);
         status.innerHTML = '<span class="badge badge--' + pair[0] + '">' +
-          window.BunkrHtml.esc(pair[1]) + "</span>";
+          window.BunkkHtml.esc(pair[1]) + "</span>";
       }
     });
   });
@@ -139,7 +136,7 @@
         ladderHost.innerHTML = "";
         return;
       }
-      window.BunkrLadder.load(ladderHost, subjectPicker.value);
+      window.BunkkLadder.load(ladderHost, subjectPicker.value);
     });
   }
 
@@ -149,10 +146,10 @@
     var drop = event.target.closest(".js-drop");
     if (!drop) return;
     drop.disabled = true;
-    window.BunkrApi.del("/api/absences/" + drop.dataset.id).then(function (res) {
+    window.BunkkApi.del("/api/absences/" + drop.dataset.id).then(function (res) {
       if (!res.ok) {
         drop.disabled = false;
-        window.BunkrToast.error(res.body.error || "That didn't work.");
+        window.BunkkToast.error(res.body.error || "That didn't work.");
         return;
       }
       window.location.reload();

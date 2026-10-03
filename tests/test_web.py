@@ -72,7 +72,7 @@ class TestAuth:
     def test_an_unverified_google_address_is_refused(self, client):
         resp = google_sign_in(client, "m@example.com", verified=False)
         assert resp.status_code == 302 and resp.headers["Location"].endswith("/login")
-        assert client.get("/").status_code == 302
+        assert client.get("/settings").status_code == 302
 
     def test_signing_in_again_lands_on_the_dashboard(self, client):
         register(client)
@@ -82,11 +82,19 @@ class TestAuth:
         assert resp.headers["Location"].endswith("/")
         assert client.get("/").status_code == 200
 
-    @pytest.mark.parametrize("path", ["/", "/upload", "/settings"])
+    @pytest.mark.parametrize("path", ["/upload", "/settings"])
     def test_pages_require_a_session(self, client, path):
         resp = client.get(path)
         assert resp.status_code == 302
         assert "/login" in resp.headers["Location"]
+
+    def test_anonymous_home_is_the_public_landing_page(self, client):
+        resp = client.get("/")
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "BUNKK" in body
+        assert 'href="/register"' in body
+        assert 'href="/login"' in body
 
     def test_upload_api_requires_a_session(self, client):
         # JSON, not a redirect: fetch() can act on a 401, never on a login page.

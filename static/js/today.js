@@ -94,7 +94,7 @@
 
     var word = hero.querySelector(".hero-verdict__word");
     if (word) {
-      var words = window.BUNKR_VERDICTS || {};
+      var words = window.BUNKK_VERDICTS || {};
       word.textContent = (words[day.verdict] || day.verdict).toUpperCase();
     }
 
@@ -103,8 +103,8 @@
 
     var meta = hero.querySelector(".hero-verdict__meta");
     var shape = day.whole_day ? "whole day"
-      : (day.leave_after ? "leaving after " + window.BunkrFmt.time(day.leave_after)
-      : (day.arrive_at ? "arriving by " + window.BunkrFmt.time(day.arrive_at) : ""));
+      : (day.leave_after ? "leaving after " + window.BunkkFmt.time(day.leave_after)
+      : (day.arrive_at ? "arriving by " + window.BunkkFmt.time(day.arrive_at) : ""));
     if (!meta && shape) {
       meta = document.createElement("span");
       meta.className = "hero-verdict__meta";
@@ -118,7 +118,7 @@
 
     /* Only a new commitment is worth checking: dropping one can't break
        anything, and asking "are you sure?" about giving budget back is noise. */
-    var ready = planned ? Promise.resolve(true) : window.BunkrCommit.guard([{
+    var ready = planned ? Promise.resolve(true) : window.BunkkCommit.guard([{
       date: button.dataset.date,
       subject_id: parseInt(button.dataset.subject, 10),
       start: button.dataset.start
@@ -129,8 +129,8 @@
       button.disabled = true;
 
       var request = planned
-        ? window.BunkrApi.del("/api/absences/" + planned)
-        : window.BunkrApi.post("/api/absences", {
+        ? window.BunkkApi.del("/api/absences/" + planned)
+        : window.BunkkApi.post("/api/absences", {
             date: button.dataset.date,
             subject_id: parseInt(button.dataset.subject, 10),
             start: button.dataset.start
@@ -139,7 +139,7 @@
       return request.then(function (res) {
         button.disabled = false;
         if (!res.ok) {
-          window.BunkrToast.error(res.body.error || "Couldn't change that.");
+          window.BunkkToast.error(res.body.error || "Couldn't change that.");
           return;
         }
 
@@ -149,8 +149,8 @@
         paintHero(res.body.day);
 
         var undo = function () { return toggle(button); };
-        if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
-          window.BunkrToast.show(
+        if (!window.BunkkCommit.report(res.body, { onUndo: undo })) {
+          window.BunkkToast.show(
             planned ? button.dataset.code + " back on"
                     : button.dataset.code + " skip planned",
             { onUndo: undo }
@@ -164,20 +164,20 @@
     var planned = button.dataset.absenceId;
     var ready = planned
       ? Promise.resolve(true)
-      : window.BunkrCommit.guard([{ date: button.dataset.date }]);
+      : window.BunkkCommit.guard([{ date: button.dataset.date }]);
 
     return ready.then(function (go) {
       if (!go) return;
       button.disabled = true;
 
       var request = planned
-        ? window.BunkrApi.del("/api/absences/" + planned)
-        : window.BunkrApi.post("/api/absences", { date: button.dataset.date });
+        ? window.BunkkApi.del("/api/absences/" + planned)
+        : window.BunkkApi.post("/api/absences", { date: button.dataset.date });
 
       return request.then(function (res) {
         button.disabled = false;
         if (!res.ok) {
-          window.BunkrToast.error(res.body.error || "Couldn't change that.");
+          window.BunkkToast.error(res.body.error || "Couldn't change that.");
           return;
         }
 
@@ -186,8 +186,8 @@
         paintHero(res.body.day);
 
         var undo = function () { return toggleDay(button); };
-        if (!window.BunkrCommit.report(res.body, { onUndo: undo })) {
-          window.BunkrToast.show(
+        if (!window.BunkkCommit.report(res.body, { onUndo: undo })) {
+          window.BunkkToast.show(
             planned ? "Back on for the whole day" : "Skipping the whole day",
             { onUndo: undo }
           );

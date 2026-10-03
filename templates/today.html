@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Today · Bunkr{% endblock %}
+{% block title %}Today · Bunkk{% endblock %}
 
 {% block content %}
 {% if not has_data %}
@@ -8,7 +8,7 @@
     <h2>No report yet</h2>
     <p class="text-muted" style="max-width:420px;margin:0 auto var(--sp-5)">
       Export the <strong>detailed</strong> attendance report from the portal —
-      semester start to today — and drop it in. Bunkr does the rest.
+      semester start to today — and drop it in. Bunkk does the rest.
     </p>
     <a class="btn btn--primary btn--lg" href="{{ url_for('core.upload') }}">Upload your PDF</a>
   </div>
@@ -44,7 +44,7 @@
        aria-label="Previous day">&larr;</a>
   {% else %}
     <span class="btn btn--sm btn--ghost week-nav__arrow" aria-disabled="true"
-          title="Bunkr only looks forwards" style="opacity:.4">&larr;</span>
+          title="Bunkk only looks forwards" style="opacity:.4">&larr;</span>
   {% endif %}
 
   <div class="week-nav__days">

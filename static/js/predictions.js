@@ -7,14 +7,14 @@
    position — was a feature nobody was ever going to finish using.
 
    Nothing reloads now. Every endpoint answers with the recomputed figures, and
-   the page patches itself from those; `bunkr:stats` is how the rest of the page
+   the page patches itself from those; `bunkk:stats` is how the rest of the page
    hears about it.
 */
 (function () {
   "use strict";
 
   function announce(stats) {
-    document.dispatchEvent(new CustomEvent("bunkr:stats", { detail: stats }));
+    document.dispatchEvent(new CustomEvent("bunkk:stats", { detail: stats }));
   }
 
   /* Pressed state lives on the buttons; the server's answer is what sets it, so
@@ -35,11 +35,11 @@
 
   function undoWith(previous) {
     return function () {
-      return window.BunkrApi
+      return window.BunkkApi
         .post("/api/predictions/bulk", { lectures: previous })
         .then(function (res) {
           if (!res.ok) {
-            window.BunkrToast.error(res.body.error || "Couldn't undo that.");
+            window.BunkkToast.error(res.body.error || "Couldn't undo that.");
             return;
           }
           announce(res.body.stats);
@@ -71,19 +71,19 @@
     busy(buttons, true);
     var lectureId = button.dataset.lecture;
     var request = wasPressed
-      ? window.BunkrApi.del("/api/lectures/" + lectureId + "/prediction")
-      : window.BunkrApi.put("/api/lectures/" + lectureId + "/prediction",
+      ? window.BunkkApi.del("/api/lectures/" + lectureId + "/prediction")
+      : window.BunkkApi.put("/api/lectures/" + lectureId + "/prediction",
                             { predicted: button.dataset.value });
 
     return request.then(function (res) {
       busy(buttons, false);
       if (!res.ok) {
-        window.BunkrToast.error(res.body.error || "Couldn't save that guess.");
+        window.BunkkToast.error(res.body.error || "Couldn't save that guess.");
         return;
       }
       paintGroup(group, res.body.predicted);
       paintAll(res.body.stats);
-      window.BunkrToast.show(word(res.body.predicted, res.body.changed),
+      window.BunkkToast.show(word(res.body.predicted, res.body.changed),
                              { onUndo: undoWith(res.body.previous) });
     });
   }
@@ -100,14 +100,14 @@
       ? "/api/subjects/" + subject + "/predictions"
       : "/api/predictions/bulk";
 
-    return window.BunkrApi.post(url, { predicted: value }).then(function (res) {
+    return window.BunkkApi.post(url, { predicted: value }).then(function (res) {
       busy(siblings, false);
       if (!res.ok) {
-        window.BunkrToast.error(res.body.error || "Couldn't save those guesses.");
+        window.BunkkToast.error(res.body.error || "Couldn't save those guesses.");
         return;
       }
       if (!res.body.changed) {
-        window.BunkrToast.show("Nothing pending to guess at.");
+        window.BunkkToast.show("Nothing pending to guess at.");
         return;
       }
 
@@ -121,7 +121,7 @@
       });
 
       paintAll(res.body.stats);
-      window.BunkrToast.show(word(value, res.body.changed),
+      window.BunkkToast.show(word(value, res.body.changed),
                              { onUndo: undoWith(res.body.previous) });
     });
   }

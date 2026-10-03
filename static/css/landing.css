@@ -1,0 +1,629 @@
+/* ==========================================================================
+   BUNKK LANDING — the public home page.
+   Requires tokens.css + components.css + app.css. Every class here is
+   prefixed lp-, and the product UI inside the mockups is the real markup of
+   the real components, so there is almost nothing to restyle.
+
+   How the states work:
+   · No JS, or prefers-reduced-motion: the page is plain. Every scene is a
+     row, every mockup shows its FINAL state. Nothing is hidden.
+   · JS adds .lp-js to <html>. That is the switch that hides the "before"
+     states, so the rules below are written as "final by default, undone
+     under .lp-js unless step N has been reached".
+   · Wide screens also get .lp-sticky: the six scenes pile into one pinned
+     stage and scrolling drives them (--sp, --wo, .is-s1…s4, data-scene).
+     Narrow screens get .lp-stack: plain rows that play when they scroll in.
+   Motion is physical only: translate, small rotations, clip-path wipes,
+   hard-shadow growth, width on meters. No fades, no scaling, no blur.
+   ========================================================================== */
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+.lp {
+  --lp-bar-h: 76px;
+  --lp-max: 1280px;
+  --lp-snap: cubic-bezier(0.3, 1.45, 0.5, 1);   /* overshoots: things land hard */
+  overflow-x: clip;
+}
+.lp a:not(.btn):not(.nav__logo) { text-decoration-thickness: 2px; }
+.lp [id] { scroll-margin-top: calc(var(--lp-bar-h) + var(--sp-4)); }
+
+/* ---- Top bar --------------------------------------------------------------- */
+.lp-bar { position: sticky; top: 0; z-index: var(--z-nav);
+  background: var(--card); border-bottom: var(--border-heavy); }
+.lp-bar__row { display: flex; align-items: center; gap: var(--sp-3);
+  height: 64px; padding: 0 var(--sp-5); max-width: var(--lp-max); margin: 0 auto; }
+.lp-bar__logo { font-size: var(--text-2xl); text-decoration: none; line-height: 1.2; }
+.lp-bar__spacer { flex: 1; }
+.lp-bar .btn { min-height: 44px; justify-content: center; }
+.lp-progress { display: none; height: 8px; background: var(--paper);
+  border-top: var(--bw) solid var(--ink); }
+.lp-js:not(.lp-sticky) .lp-progress { display: block; }
+.lp-progress__fill { height: 100%; width: calc(var(--pp, 0) * 100%);
+  background: var(--acc-yellow); border-right: var(--bw) solid var(--ink); }
+.lp-rail { display: none; }
+.lp-sticky .lp-rail { display: flex; gap: var(--sp-2); flex: 0 1 680px; min-width: 0; margin-left: var(--sp-4); }
+.lp-rail__seg { position: relative; flex: 1 1 0; min-width: 0; height: 40px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius-sm); background: var(--card);
+  color: var(--ink); text-decoration: none; overflow: hidden; }
+/* "Checkpoints" is twice the length of the other labels. */
+.lp-rail__seg[data-seg="5"] { flex-grow: 1.9; }
+.lp-rail__seg:hover { background: var(--soft-yellow); }
+.lp-rail__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--f, 0) * 100%);
+  background: var(--acc-yellow); border-right: var(--bw) solid var(--ink); }
+.lp-rail__seg[aria-current="true"] { box-shadow: var(--shadow-sm); transform: translate(-1px, -1px); }
+.lp-rail__seg[aria-current="true"] .lp-rail__lbl { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.lp-rail__lbl { position: relative; font-family: var(--font-label); font-weight: 700; font-size: 11px;
+  letter-spacing: var(--tracking-label); text-transform: uppercase; }
+@media (pointer: coarse) { .lp-rail__seg { height: 44px; } }
+@media (max-width: 420px) {
+  .lp-bar__row { padding: 0 var(--sp-3); gap: var(--sp-2); }
+  .lp-bar__logo { font-size: var(--text-xl); }
+  .lp-bar__signin { padding-inline: var(--sp-3); }
+}
+
+/* ---- Hero ------------------------------------------------------------------ */
+.lp-hero { max-width: var(--lp-max); margin: 0 auto;
+  padding: var(--sp-7) var(--sp-5) var(--sp-8);
+  display: grid; gap: var(--sp-7); align-items: center; }
+@media (min-width: 900px) {
+  .lp-hero { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    min-height: calc(100svh - var(--lp-bar-h)); padding-block: var(--sp-7); }
+}
+.lp-hero__copy { min-width: 0; }
+.lp-hero__kicker { margin: 0 0 var(--sp-5); color: var(--ink-muted); }
+.lp-wordmark { margin: 0 0 var(--sp-6); font-size: clamp(4.25rem, 12vw, 9.5rem);
+  line-height: 1; letter-spacing: -0.01em; }
+.lp-wordmark__slab { display: inline-block; background: var(--acc-yellow);
+  border: var(--border-heavy); box-shadow: var(--shadow-xl);
+  padding: 0.04em 0.14em 0; transform: rotate(-1.6deg); }
+.lp-hero__line { font-size: clamp(1.25rem, 2.2vw, 1.75rem); font-weight: 800;
+  line-height: 1.25; max-width: 18em; margin: 0 0 var(--sp-6); }
+.lp-hero__cta { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.lp-hero__cta .btn { min-height: 56px; justify-content: center; }
+.lp-cue { display: none; margin: var(--sp-6) 0 0; align-items: center; gap: var(--sp-2);
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: var(--tracking-caps); }
+.lp-cue__arrow { display: inline-grid; place-items: center; width: 24px; height: 24px;
+  background: var(--ink); color: var(--ink-inverse); border-radius: var(--radius-sm); }
+@media (prefers-reduced-motion: no-preference) {
+  .lp-cue { display: flex; }
+  .lp-cue__arrow { animation: lp-step-down 900ms steps(1, end) infinite; }
+}
+@keyframes lp-step-down { 0% { transform: translateY(0); } 50% { transform: translateY(4px); } }
+.lp-hero__fine { margin: var(--sp-5) 0 0; font-size: var(--text-sm); color: var(--ink-muted); max-width: 30em; }
+
+/* Arrow on the CTAs shoves forward on hover. Pure translate. */
+.lp-go__arrow { display: inline-block; transition: transform var(--dur) var(--ease); }
+.lp-go:hover .lp-go__arrow { transform: translateX(6px); }
+
+/* The live verdict. --tx/--ty (-1..1) come from the pointer; the card leans
+   toward it and its hard shadow swings the other way, like a light moved. */
+.lp-hero__stage { position: relative; display: grid; place-items: center;
+  min-height: 460px; --tx: 0; --ty: 0; }
+.lp-vcard { position: relative; z-index: 2; width: min(100%, 480px);
+  transform: translate(calc(var(--tx) * 8px), calc(var(--ty) * 8px))
+             rotate(calc(var(--tx) * 2.5deg));
+  transition: transform 120ms var(--ease); }
+.lp-vcard { container-type: inline-size; }
+.lp-vcard .hero-verdict { margin: 0; height: 262px; overflow: hidden; border-radius: var(--radius-lg);
+  box-shadow: calc(10px - var(--tx) * 9px) calc(10px - var(--ty) * 9px) 0 var(--ink);
+  transition: box-shadow 120ms var(--ease); }
+.lp-hv__word { font-size: clamp(1.75rem, 10.5cqw, 3.5rem); white-space: nowrap; }
+.lp-hv__reason { height: 3.2em; max-width: 24em; }
+.lp-hv.is-thud { animation: lp-thud 320ms var(--lp-snap); }
+.lp-hv__word.is-flap { animation: lp-flap 380ms steps(5, end); }
+@keyframes lp-flap {
+  from { clip-path: inset(0 0 100% 0); transform: translateY(-16px); }
+  to   { clip-path: inset(0 0 0 0);    transform: none; }
+}
+@keyframes lp-thud {
+  0%   { transform: translateY(-10px); }
+  45%  { transform: translateY(8px); }
+  100% { transform: none; }
+}
+
+/* Stickers: real components, stuck on at slight angles. */
+.lp-sticker { position: absolute; z-index: 3;
+  transform: translate(calc(var(--tx) * var(--k, 0) * 1px), calc(var(--ty) * var(--k, 0) * 1px))
+             rotate(var(--r, 0deg));
+  transition: transform 160ms var(--ease); }
+.lp-sticker--week { --r: -3deg; --k: -10; left: -4%; bottom: 3%; width: min(340px, 78%);
+  background: var(--card); border: var(--border-heavy); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md); padding: var(--sp-2); }
+.lp-sticker--week .week-nav__days { grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--sp-1); }
+.lp-sticker--week .week-nav__dow { font-size: 9px; letter-spacing: 0; }
+.lp-sticker--left { --r: 9deg; --k: 16; top: 4%; right: 2%; font-size: var(--text-base);
+  padding: 6px 16px; box-shadow: var(--shadow-md); }
+.lp-sticker--tile { --r: 6deg; --k: -14; right: 1%; bottom: 26%; width: 112px; }
+/* The day tile. The app's plan page moved to month grids and dropped this
+   component, so the landing page keeps its own copy for the hero sticker and
+   the three tiles in the closing section. */
+.lp-sticker--tile .verdict, .lp-final__tile .verdict { min-width: 0; border: var(--border-heavy);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-sm);
+  padding: var(--sp-3); text-align: center; background: var(--card); }
+.lp-sticker--tile .verdict--skip, .lp-final__tile .verdict--skip { background: var(--safe-fill); }
+.lp-sticker--tile .verdict--partial, .lp-final__tile .verdict--partial { background: var(--warn-fill); }
+.lp-sticker--tile .verdict--go, .lp-final__tile .verdict--go { background: var(--danger-fill); }
+.lp-sticker--tile .verdict__dow, .lp-final__tile .verdict__dow { font-family: var(--font-label);
+  font-size: var(--text-xs); text-transform: uppercase; }
+.lp-sticker--tile .verdict__date, .lp-final__tile .verdict__date { font-family: var(--font-display);
+  font-size: var(--text-2xl); line-height: 1; margin: 2px 0; }
+.lp-sticker--tile .verdict__tag, .lp-final__tile .verdict__tag { display: block; margin-top: var(--sp-2);
+  font-family: var(--font-mono); font-weight: 700; font-size: 10px;
+  text-transform: uppercase; white-space: nowrap; border: var(--border);
+  border-radius: var(--radius-sm); padding: 2px 4px; background: var(--card); }
+.lp-sticker--tape { --r: -4deg; --k: 8; top: 1%; left: 6%;
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: var(--tracking-caps); background: var(--card);
+  border: var(--bw) dashed var(--ink); padding: 3px 10px; }
+@media (max-width: 899px) {
+  .lp-hero__stage { display: flex; flex-wrap: wrap; justify-content: center;
+    align-items: center; gap: var(--sp-5); min-height: 0; }
+  .lp-vcard { flex: 0 0 100%; }
+  .lp-sticker { position: static; --k: 0; }
+  .lp-sticker--week { flex: 1 1 280px; max-width: 340px; }
+  .lp-sticker--tape { order: -1; flex: 0 0 auto; margin: 0 auto -8px; }
+}
+
+/* Hero entrance: things drop on the desk. CSS only, so it needs no JS, and it
+   fills backwards so the tilt transforms above take over once it ends. */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-wordmark__slab { animation: lp-drop 560ms var(--lp-snap) backwards; }
+  .lp-hero__line, .lp-hero__cta, .lp-hero__fine, .lp-hero__kicker {
+    animation: lp-wipe 420ms steps(7, end) backwards; }
+  .lp-hero__kicker { animation-delay: 60ms; }
+  .lp-hero__line { animation-delay: 380ms; }
+  .lp-hero__cta  { animation-delay: 480ms; }
+  .lp-hero__fine { animation-delay: 560ms; }
+  .lp-vcard { animation: lp-drop 600ms var(--lp-snap) 200ms backwards; }
+  .lp-sticker { animation: lp-stick 380ms var(--lp-snap) backwards; }
+  .lp-sticker--week  { animation-delay: 700ms; }
+  .lp-sticker--left  { animation-delay: 820ms; }
+  .lp-sticker--tile  { animation-delay: 920ms; }
+  .lp-sticker--tape  { animation-delay: 1000ms; }
+}
+@keyframes lp-drop {
+  from { transform: translateY(-90px) rotate(-6deg); }
+}
+@keyframes lp-stick {
+  from { transform: translate(0, -60px) rotate(calc(var(--r, 0deg) - 14deg)); }
+}
+@keyframes lp-wipe {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* ---- Intro to the story ---------------------------------------------------- */
+.lp-intro { max-width: var(--lp-max); margin: 0 auto;
+  padding: var(--sp-7) var(--sp-5) var(--sp-6); }
+.lp-intro .eyebrow { margin: 0 0 var(--sp-4); color: var(--ink-muted); }
+.lp-intro__title { font-size: clamp(2.25rem, 6vw, 4.5rem); margin: 0 0 var(--sp-4); max-width: 12em; }
+.lp-intro__sub { font-size: var(--text-lg); color: var(--ink-muted); max-width: 32em; margin: 0; }
+
+/* ---- Story: the plain layout (no JS, reduced motion) ------------------------ */
+.lp-scenes { display: grid; gap: var(--sp-8); max-width: var(--lp-max);
+  margin: 0 auto; padding: var(--sp-5) var(--sp-5) var(--sp-8); position: relative; }
+.lp-scene { display: grid; gap: var(--sp-5); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 900px) {
+  .lp-scene { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--sp-7); align-items: center; }
+  html:not(.lp-sticky) .lp-scene:nth-of-type(even) .lp-scene__copy { order: 2; }
+}
+.lp-stage__block, .lp-counter, .lp-wipe { display: none; }
+
+.lp-scene__copy { min-width: 0; }
+.lp-scene__copy .eyebrow { margin: 0 0 var(--sp-3); color: var(--ink-muted); }
+.lp-scene__copy h2 { font-size: clamp(2rem, 4.4vw, 3.5rem); line-height: 1.02; margin: 0 0 var(--sp-4); }
+.lp-scene__copy p:not(.eyebrow) { font-size: var(--text-lg); max-width: 26em; margin: 0; }
+@media (max-width: 899px) {
+  .lp-scene__copy h2 { font-size: var(--text-3xl); }
+  .lp-scene__copy p:not(.eyebrow) { font-size: var(--text-base); }
+}
+
+/* The device: ink border, xl hard shadow, a title bar that names the screen. */
+.lp-frame { position: relative; min-width: 0;
+  border: var(--border-heavy); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl); background: var(--card); overflow: hidden; }
+.lp-frame__inner { display: flex; flex-direction: column; height: 100%; background: var(--card); }
+.lp-frame__bar { display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); background: var(--ink); color: var(--ink-inverse);
+  border-bottom: var(--border); flex: none; }
+.lp-frame__dots { display: inline-flex; gap: 5px; flex: none; }
+.lp-frame__dots i { width: 10px; height: 10px; border: 2px solid var(--ink-inverse); border-radius: 2px; }
+.lp-frame__url { flex: 1; min-width: 0; height: 26px; line-height: 22px;
+  background: var(--card); color: var(--ink); border: var(--border);
+  border-radius: var(--radius-sm); padding: 0 var(--sp-3); font-size: var(--text-xs); font-weight: 700; }
+.lp-frame__eg { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: var(--tracking-caps); color: var(--acc-yellow); }
+.lp-url-b { display: none; }
+
+.lp-pane { container: lp-pane / inline-size; position: relative; flex: 1; min-height: 0; padding: var(--sp-4);
+  background: var(--paper); display: flex; flex-direction: column; gap: var(--sp-4); overflow: hidden; }
+.lp-pane .hero-verdict { margin: 0; }
+.lp-pane h3.strip-month { margin: 0 0 var(--sp-1); }
+
+/* ---- Pane 1: today ---------------------------------------------------------- */
+.lp-pane--today .hero-verdict { padding: var(--sp-4) var(--sp-5); }
+.lp-pane--today .hero-verdict__word { font-size: var(--text-4xl); margin: 2px 0; }
+.lp-pane--today .week-nav__day { padding: 6px 0; }
+.lp-lectures .lecture { padding: var(--sp-3) 0; }
+.lp-lectures .btn { min-width: 108px; justify-content: center; }
+.lp-lectures .mono { white-space: nowrap; }
+@container lp-pane (max-width: 420px) {
+  .lp-lectures .lecture { grid-template-columns: 1fr; gap: var(--sp-2); }
+}
+@media (max-width: 899px) { .lp-vcard .hero-verdict { height: 220px; } }
+.lp-dayhead { gap: var(--sp-3); }
+.lp-dayhead__t { margin: 0; font-size: var(--text-xl); }
+.lp-hint { display: none; margin: var(--sp-5) 0 0; font-weight: 700; font-size: var(--text-sm); }
+.lp-sticky .lp-hint { display: block; }
+.lp-scene__copy p.lp-hint { margin-top: var(--sp-4); }
+/* The Skip buttons in scene 1 are state-by-class: JS toggles .is-on. */
+.lp-skipbtn .lp-swap__b, .lp-daybtn.is-on .lp-swap__b { display: none; }
+.lp-skipbtn.is-on .lp-swap__a { display: none; }
+.lp-skipbtn.is-on .lp-swap__b { display: inline; }
+.lp-skipbtn.is-on, .lp-daybtn.is-on { transform: translate(2px, 2px); box-shadow: none; }
+.lp-skipbtn.is-on:hover, .lp-daybtn.is-on:hover { transform: translate(2px, 2px); box-shadow: none; }
+.lp-skipbtn.is-anim { animation: lp-press 360ms var(--ease); }
+.lp-s1card.is-thud { animation: lp-thud 320ms var(--lp-snap); }
+.lp-s1card .hero-verdict__word.is-flap { animation: lp-flap 380ms steps(5, end); }
+.lp-s1card .hero-verdict__reason { min-height: 3.1em; }
+
+/* ---- Pane 2: the budget ------------------------------------------------------ */
+.lp-pane--budget .grid-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+.lp-pane--budget .stat { padding: var(--sp-3) var(--sp-4); }
+.lp-pane--budget .stat__value { font-size: var(--text-4xl); }
+.lp-pane--budget .stat__meta { font-size: var(--text-xs); }
+.lp-readings { display: grid; gap: var(--sp-4); margin-top: var(--sp-1); }
+.lp-reading__head { display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--sp-3); font-size: var(--text-sm); margin-bottom: var(--sp-2); }
+.lp-reading__name { font-weight: 700; }
+.lp-reading--worst .meter { margin-top: 20px; }
+.lp-meter .meter__fill { width: calc(var(--w, 0) * 1%); }
+.lp-meter--pending .meter__fill { background: var(--pending-fill); }
+.lp-caption { align-self: flex-start; margin: 0; padding: 4px 12px; font-weight: 800;
+  background: var(--acc-yellow); border: var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm); transform: rotate(-1.2deg); }
+
+/* ---- Pane 3: the plan -------------------------------------------------------- */
+/* The real month grid and day sheet, squeezed to fit the frame. */
+.lp-month { margin: 0; padding: var(--sp-3); box-shadow: var(--shadow-sm); flex: none; }
+.lp-month__head { display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.lp-month__head h3 { margin: 0; font-size: var(--text-lg); }
+.lp-legend { margin: 0; gap: var(--sp-1); flex-wrap: nowrap; }
+.lp-legend .badge { font-size: 9px; padding: 1px 6px; letter-spacing: 0; white-space: nowrap; }
+.lp-cal { gap: 6px; }
+.lp-cal .cal__dow { font-size: 10px; padding-bottom: 0; }
+.lp-month .lp-cal .cal__day { min-height: 30px; }
+.lp-cal .cal__day.is-pick { outline: 3px dashed var(--ink); outline-offset: 2px; }
+.lp-sheet { position: static; margin-top: auto; max-width: none; padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-lg); border-radius: var(--radius-md); }
+.lp-sheet .modal__title { font-size: var(--text-xl); margin-bottom: var(--sp-2); }
+.lp-sheet .sheet-verdict { margin-bottom: var(--sp-2); }
+.lp-sheet .sheet-partial { flex-direction: row; align-items: center; flex-wrap: wrap;
+  justify-content: space-between; margin-bottom: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+.lp-sheet__rows { gap: 0; }
+.lp-sheet .lecture { grid-template-columns: 1fr auto; padding: var(--sp-2) 0; cursor: pointer;
+  font-size: var(--text-sm); }
+.lp-sheet .lecture .mono { white-space: nowrap; }
+.lp-sheet__foot { margin-top: var(--sp-2); }
+/* Once the script has taken the pane over, the sheet behaves like the dialog it
+   stands in for: it sits over the page and goes away when closed. */
+.lp-plan-live .lp-sheet { position: absolute; z-index: 2; margin: 0;
+  left: var(--sp-3); right: var(--sp-3); bottom: var(--sp-3);
+  max-height: calc(100% - var(--sp-3) * 2); overflow-y: auto; }
+.lp-plan-live .lp-sheet:not(.is-open) { transform: translateY(calc(100% + 48px)); visibility: hidden; }
+@container lp-pane (max-width: 400px) {
+  .lp-legend { display: none; }
+}
+.lp-sect { font-size: var(--text-xl); margin: var(--sp-2) 0 0 !important; }
+.lp-committed { padding: var(--sp-2) var(--sp-4); box-shadow: var(--shadow-sm); min-height: 56px;
+  max-height: 132px; overflow-y: auto; flex: none; }
+.lp-committed p { margin: var(--sp-2) 0; }
+.lp-committed .lecture { padding: var(--sp-2) 0; }
+
+/* ---- Pane 4: the ladder ------------------------------------------------------- */
+.lp-ladder-card { margin: 0; box-shadow: var(--shadow-md); }
+.lp-pane--ladder .ladder { gap: var(--sp-3); margin: var(--sp-4) 0; }
+.lp-pane--ladder .ladder__rung { grid-template-columns: 36px 84px 1fr; padding: var(--sp-3) var(--sp-4); }
+.lp-pane--ladder .ladder__n { font-size: var(--text-2xl); }
+.lp-pane--ladder .ladder__pct { font-size: var(--text-xl); }
+.lp-ladder-foot { margin: 0; font-size: var(--text-base); }
+.lp-ladder-card .field { max-width: 340px; margin-bottom: var(--sp-3); }
+.lp-ladder-card .select { color: var(--ink); -webkit-text-fill-color: var(--ink); opacity: 1; }
+.lp-lead { font-size: var(--text-sm); margin: 0; }
+
+/* ---- Pane 5: setup ------------------------------------------------------------- */
+.lp-sub { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.lp-dropwrap { position: relative; }
+.lp-dz { padding: var(--sp-6) var(--sp-4) 76px; cursor: default; }
+.lp-file { position: absolute; left: 50%; bottom: var(--sp-4);
+  display: flex; align-items: center; gap: var(--sp-3); white-space: nowrap;
+  background: var(--card); border: var(--border-heavy); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md); padding: 4px 12px 4px 4px;
+  transform: translateX(-50%) rotate(-2deg); }
+.lp-file__tag { background: var(--danger-fill); border: var(--border); border-radius: 4px;
+  padding: 2px 8px; font-weight: 700; font-size: var(--text-xs); }
+.lp-file__name { font-size: var(--text-sm); font-weight: 700; }
+.lp-tt.tt { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-2); }
+.lp-tt .tt__col { min-height: 0; padding: var(--sp-1); }
+.lp-tt .tt__time { font-size: 10px; }
+.lp-tt .tt__name { font-size: var(--text-xs); }
+.lp-tt .tt__block { padding: 4px 5px; }
+.lp-tt .tt__add { padding: 6px 4px; }
+.lp-tt-actions { margin-top: var(--sp-1); gap: var(--sp-3); }
+.lp-tt-actions .btn { justify-content: center; }
+@container lp-pane (max-width: 540px) {
+  .lp-tt.tt { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lp-tt__more { display: none; }
+}
+
+/* ---- Pane 6: checkpoints ------------------------------------------------------ */
+/* The checkpoints page's form and list, under the one number they change. */
+.lp-cp-stat { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline;
+  gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); box-shadow: var(--shadow-sm); flex: none; }
+.lp-cp-stat .stat__label, .lp-cp-stat .stat__meta { margin: 0; }
+.lp-cp-stat .stat__value { font-size: var(--text-3xl); }
+.lp-cp-stat .stat__meta { font-size: var(--text-xs); text-align: right; }
+.lp-cp-n.is-new { animation: lp-thud 320ms var(--lp-snap); }
+.lp-cp-form, .lp-cp-listcard { padding: var(--sp-3) var(--sp-4); box-shadow: var(--shadow-sm); margin: 0; }
+.lp-cp-form { flex: none; }
+.lp-cp-form h3, .lp-cp-listcard h3 { font-size: var(--text-base); margin: 0 0 var(--sp-2); }
+.lp-cp-fields { align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; }
+.lp-cp-fields .field { margin: 0; min-width: 0; }
+.lp-cp-fields .field > label { font-size: 10px; margin-bottom: 2px; }
+.lp-cp-fields .input { padding: 6px var(--sp-2); font-size: var(--text-sm); width: 100%; }
+.lp-cp-name { flex: 1 1 120px; }
+.lp-cp-fields .btn { white-space: nowrap; }
+.lp-cp-error { margin-top: var(--sp-2); }
+.lp-cp-listcard { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.lp-cp-list { gap: 0; }
+.lp-cp-list .lecture { grid-template-columns: 1fr auto; padding: var(--sp-2) 0; font-size: var(--text-sm); }
+.lp-cp-list .lecture.is-new { animation: lp-thud 340ms var(--lp-snap); }
+.lp-cp-list .badge { white-space: nowrap; }
+.lp-cp-list .lecture .mono { white-space: nowrap; }
+.lp-cp-list .lecture > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; }
+@container lp-pane (max-width: 440px) {
+  .lp-cp-list .lecture { grid-template-columns: 1fr; gap: var(--sp-1); }
+}
+
+/* ======================================================================
+   JS MODES. Everything below is gated on .lp-js, so removing the script
+   (or asking for reduced motion) leaves the final states above untouched.
+   ====================================================================== */
+
+/* Shared easing for state changes. */
+.lp-js .lp-scene .ladder__rung,
+.lp-js .lp-scene .lp-file, .lp-js .lp-scene .lp-merged, .lp-js .lp-scene .tt__block,
+.lp-js .lp-scene .lp-dz, .lp-js .lp-scene .lp-reading, .lp-js .lp-scene .lp-caption,
+.lp-js .lp-scene .lp-ladder-foot {
+  transition: transform 380ms var(--lp-snap), clip-path 380ms steps(7, end),
+              box-shadow 200ms var(--ease), background 0ms;
+}
+
+/* -- 01: the press itself is class-driven, see .lp-skipbtn above ------------ */
+@keyframes lp-press {
+  0%   { transform: translate(-2px, -2px); box-shadow: var(--shadow-md); }
+  45%  { transform: translate(4px, 4px);   box-shadow: none; }
+  100% { transform: translate(2px, 2px);   box-shadow: none; }
+}
+
+/* -- 02: meters --------------------------------------------------------------- */
+.lp-js.lp-sticky .lp-reading--worst .meter__fill {
+  width: calc(min(1, var(--sp, 0) / 0.42) * var(--w) * 1%); }
+.lp-js.lp-stack .lp-reading--worst .meter__fill { transition: width 900ms var(--ease); }
+.lp-js.lp-stack .lp-scene:not(.is-s1) .lp-reading--worst .meter__fill { width: 8px; }
+.lp-js .lp-reading--official .meter__fill, .lp-js .lp-reading--best .meter__fill {
+  transition: width 650ms var(--ease); }
+.lp-js .lp-scene:not(.is-s2) .lp-reading--official { transform: translateX(28px); }
+.lp-js .lp-scene:not(.is-s2) .lp-reading--official .meter__fill { width: 8px; }
+.lp-js .lp-scene:not(.is-s3) .lp-reading--best { transform: translateX(28px); }
+.lp-js .lp-scene:not(.is-s3) .lp-reading--best .meter__fill { width: 8px; }
+.lp-js .lp-scene:not(.is-s4) .lp-caption { clip-path: inset(0 100% 0 0); transform: translateX(-12px) rotate(-1.2deg); }
+
+/* -- 03: the grid pops in; landing.js picks a day and opens its sheet ----------- */
+.lp-js.lp-stack .lp-pane--plan { min-height: 520px; }
+.lp-js .lp-scene:not(.is-s1) .lp-cal .cal__day { transform: scale(0); box-shadow: none; }
+.lp-js .lp-plan-live .lp-sheet { transition: transform 380ms var(--lp-snap), visibility 0s; }
+.lp-js .lp-plan-live .lp-sheet:not(.is-open) { transition-delay: 0s, 380ms; }
+.lp-js .lp-cal .cal__count.is-new { animation: lp-stamp 420ms var(--lp-snap); }
+@keyframes lp-stamp {
+  0%   { transform: translate(8px, -22px) rotate(-24deg); }
+  60%  { transform: translate(0, 2px) rotate(4deg); }
+  100% { transform: none; }
+}
+
+/* -- 04: rungs drop in, one per step ------------------------------------------------ */
+.lp-js .lp-scene:not(.is-s1) .lp-r1, .lp-js .lp-scene:not(.is-s2) .lp-r2,
+.lp-js .lp-scene:not(.is-s3) .lp-r3, .lp-js .lp-scene:not(.is-s4) .lp-r4 {
+  clip-path: inset(0 0 100% 0); transform: translateY(-34px) rotate(-1.5deg); }
+.lp-js .ladder__rung { clip-path: inset(-4px); }
+.lp-js .lp-scene:not(.is-s4) .lp-ladder-foot { clip-path: inset(0 100% 0 0); transform: translateX(-12px); }
+.lp-js .lp-scene.is-s4 .lp-r3 { outline: 3px dashed var(--ink); outline-offset: 3px; }
+
+/* -- 05: PDF drops, report merges, timetable is drafted ------------------------------ */
+.lp-js .lp-pane--setup { display: grid; }
+.lp-js .lp-sub { grid-area: 1 / 1; }
+.lp-js .lp-sub--tt { background: var(--paper); z-index: 2; clip-path: inset(0); }
+.lp-js .lp-scene:not(.is-s3) .lp-sub--tt { clip-path: inset(0 0 100% 0); }
+.lp-js .lp-sub--tt, .lp-js .lp-sub--upload { transition: clip-path 420ms steps(8, end), visibility 0s; }
+/* Once the timetable has covered it, the upload view stops painting (its
+   shadows would otherwise poke out round the edges). */
+.lp-js .lp-scene.is-s3 .lp-sub--upload { visibility: hidden; transition-delay: 0s, 450ms; }
+.lp-js .lp-scene:not(.is-s1) .lp-file { transform: translate(180%, -150%) rotate(14deg); }
+.lp-js .lp-scene.is-s1:not(.is-s2) .lp-file { transform: translate(-30%, -170%) rotate(7deg); }
+.lp-js .lp-scene:not(.is-s2) .lp-merged { transform: translateY(26px); clip-path: inset(0 0 100% 0); }
+.lp-js .lp-scene.is-s2 .lp-dz { border-style: solid; background: var(--acc-cyan);
+  transform: translate(-2px, -2px); box-shadow: var(--shadow-lg); }
+.lp-js .lp-merged { clip-path: inset(-6px); }
+.lp-js .lp-tt .tt__block { clip-path: inset(-6px); }
+.lp-js .lp-scene:not(.is-s4) .lp-tt .tt__block { clip-path: inset(0 0 100% 0); transform: translateY(-16px); }
+.lp-js .lp-scene.is-s4 .lp-tt .tt__block { transition-delay: calc(var(--i, 0) * 50ms), calc(var(--i, 0) * 50ms), 0s, 0s; }
+.lp-js .lp-scene.is-s3 .lp-url-a { display: none; }
+.lp-js .lp-scene.is-s3 .lp-url-b { display: inline; }
+.lp-js .lp-scene.is-s3 .lp-drafted { animation: lp-thud 340ms var(--lp-snap); }
+
+/* ======================================================================
+   STICKY STAGE (wide screens). One pinned stage; the six scenes share a
+   single grid cell. Scene N sits on top of scene N+1, and "leaving" means a
+   clip-path wipe (--wo 0→1) that uncovers the next one underneath.
+   ====================================================================== */
+.lp-sticky .lp-story { height: calc(var(--lp-n, 6) * 100vh); }
+.lp-sticky .lp-stage { position: sticky; top: 0; height: 100vh; height: 100svh;
+  display: grid; align-items: center; padding-top: var(--lp-bar-h); overflow: clip; }
+.lp-sticky .lp-scenes { --lp-fh: clamp(420px, calc(100svh - var(--lp-bar-h) - 120px), 560px);
+  width: 100%; display: grid; gap: 0; padding-block: 0; align-items: stretch; }
+.lp-sticky .lp-scene { grid-area: 1 / 1; align-items: stretch; position: relative; z-index: 1; }
+.lp-sticky .lp-scene[data-scene="1"] { z-index: 6; }
+.lp-sticky .lp-scene[data-scene="2"] { z-index: 5; }
+.lp-sticky .lp-scene[data-scene="3"] { z-index: 4; }
+.lp-sticky .lp-scene[data-scene="4"] { z-index: 3; }
+.lp-sticky .lp-scene[data-scene="5"] { z-index: 2; }
+
+/* Copy: an opaque panel so the scene underneath can't show through it. */
+/* Copy hands off in two halves of the wipe window: --co (0..1) is the outgoing
+   copy leaving, --ci (0..1) the incoming copy arriving. They never overlap, so
+   two headlines are never legible at once. */
+/* The counter sits in the bottom-left of the same grid cell, so the copy keeps
+   a strip clear for it. Padding rather than a margin on the counter: if the
+   copy is taller than the frame the row grows and the gap survives. */
+.lp-sticky .lp-scene__copy { display: flex; align-items: center; padding-bottom: 84px; }
+.lp-sticky .lp-scene__copyin {
+  transform: translate(calc(var(--co, 0) * -72px + (1 - var(--ci, 1)) * 64px), calc((1 - var(--ci, 1)) * 28px));
+  clip-path: inset(0 -24px calc((var(--co, 0) + 1 - var(--ci, 1)) * 100%) -24px); }
+.lp-sticky .lp-scene.is-gone { visibility: hidden; }
+.lp-sticky .lp-frame { align-self: center; height: var(--lp-fh); background: transparent; }
+.lp-sticky .lp-frame__inner { clip-path: inset(0 0 calc(var(--wo, 0) * 100%) 0); }
+.lp-sticky .lp-pane { padding: var(--sp-3) var(--sp-4); gap: var(--sp-3); }
+
+/* The squeegee: an ink bar riding the wipe edge. */
+.lp-sticky .lp-scene.is-wiping .lp-wipe { display: block; position: absolute; left: 0; right: 0;
+  height: 8px; bottom: calc(var(--wo, 0) * 100%); background: var(--ink); z-index: 3; }
+
+/* The block behind the frame. One accent for the whole story; it moves. */
+.lp-sticky .lp-stage__block { display: block; z-index: 0; grid-area: 1 / 1; justify-self: end; align-self: center;
+  width: calc((100% - var(--sp-7)) * 7 / 12); height: var(--lp-fh);
+  background: var(--acc-purple); border: var(--border-heavy); border-radius: var(--radius-lg);
+  transform: translate(-28px, 26px) rotate(-2deg);
+  transition: transform 460ms var(--lp-snap); }
+.lp-stage[data-scene="2"] .lp-stage__block { transform: translate(30px, -22px) rotate(1.6deg); }
+.lp-stage[data-scene="3"] .lp-stage__block { transform: translate(-26px, -26px) rotate(2deg); }
+.lp-stage[data-scene="4"] .lp-stage__block { transform: translate(32px, 28px) rotate(-1.6deg); }
+.lp-stage[data-scene="5"] .lp-stage__block { transform: translate(0, 36px) rotate(0.8deg); }
+.lp-stage[data-scene="6"] .lp-stage__block { transform: translate(-30px, 20px) rotate(-1.4deg); }
+
+/* The counter: an odometer. Each digit pair is one em tall; the roll slides. */
+.lp-sticky .lp-counter { display: flex; align-items: baseline; gap: var(--sp-2); z-index: 10;
+  grid-area: 1 / 1; justify-self: start; align-self: end; font-size: var(--text-2xl); font-weight: 700; }
+.lp-counter__win { display: block; height: 1.15em; line-height: 1.15; overflow: hidden;
+  border: var(--border); border-radius: var(--radius-sm); background: var(--ink); color: var(--acc-yellow); padding: 0 8px; }
+.lp-counter__roll { display: block; transition: transform 320ms steps(5, end); }
+.lp-counter__roll i { display: block; height: 1.15em; font-style: normal; }
+.lp-stage[data-scene="2"] .lp-counter__roll { transform: translateY(-1.15em); }
+.lp-stage[data-scene="3"] .lp-counter__roll { transform: translateY(-2.3em); }
+.lp-stage[data-scene="4"] .lp-counter__roll { transform: translateY(-3.45em); }
+.lp-stage[data-scene="5"] .lp-counter__roll { transform: translateY(-4.6em); }
+.lp-stage[data-scene="6"] .lp-counter__roll { transform: translateY(-5.75em); }
+.lp-counter__of { color: var(--ink-muted); }
+
+/* Panes are fixed height here; stack mode lets them grow. */
+.lp-sticky .lp-pane--plan { min-height: 0; }
+@media (max-height: 800px) {
+  .lp-sticky .lp-pane--today .hero-verdict { padding: var(--sp-3) var(--sp-5); }
+  .lp-sticky .lp-pane--today .hero-verdict__word { font-size: var(--text-3xl); }
+  .lp-sticky .lp-lectures .lecture { padding: var(--sp-2) 0; }
+  .lp-sticky .lp-pane--budget .stat__value { font-size: var(--text-3xl); }
+  .lp-sticky .lp-readings { gap: var(--sp-3); }
+  .lp-sticky .lp-pane--ladder .ladder__rung { padding: var(--sp-2) var(--sp-4); }
+  .lp-sticky .lp-pane--ladder .ladder { gap: var(--sp-2); margin: var(--sp-3) 0; }
+  .lp-sticky .lp-ladder-card { padding: var(--sp-4); }
+}
+
+/* ======================================================================
+   STACK MODE (narrow). The scenes are rows; each plays once when it
+   scrolls into view. A hair of top margin keeps the sticky bar off them.
+   ====================================================================== */
+.lp-stack .lp-scenes { gap: var(--sp-8); }
+.lp-stack .lp-frame { box-shadow: var(--shadow-lg); }
+
+/* ---- Features --------------------------------------------------------------------- */
+.lp-features { max-width: var(--lp-max); margin: 0 auto; padding: var(--sp-8) var(--sp-5); }
+.lp-features .eyebrow { margin: 0 0 var(--sp-4); color: var(--ink-muted); }
+.lp-features__title { font-size: clamp(2rem, 5vw, 3.5rem); max-width: 14em; margin: 0 0 var(--sp-7); }
+.lp-grid { display: grid; gap: var(--sp-6);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); }
+.lp-rv { min-width: 0; }
+.lp-card { --tx: 0; --ty: 0; height: 100%; display: flex; flex-direction: column;
+  box-shadow: calc(4px - var(--tx) * 4px) calc(4px - var(--ty) * 4px) 0 var(--ink);
+  transform: translate(calc(var(--tx) * 3px), calc(var(--ty) * 3px));
+  transition: transform 120ms var(--ease), box-shadow 120ms var(--ease); }
+.lp-card:hover {
+  box-shadow: calc(9px - var(--tx) * 6px) calc(9px - var(--ty) * 6px) 0 var(--ink);
+  transform: translate(calc(-2px + var(--tx) * 3px), calc(-2px + var(--ty) * 3px)); }
+.lp-card .eyebrow { margin: 0 0 var(--sp-2); color: var(--ink-muted); }
+.lp-card h3 { font-family: var(--font-display); font-weight: 400; font-size: var(--text-2xl);
+  line-height: 1.1; margin: 0; }
+.lp-vig { margin: var(--sp-5) 0; flex: 1; align-content: start; }
+.lp-vig .table-wrap { box-shadow: var(--shadow-sm); }
+.lp-card__text { margin: 0; font-size: var(--text-sm); color: var(--ink-muted); }
+.lp-list .lecture { grid-template-columns: 1fr auto; }
+.lp-half .sheet-verdict, .lp-half .sheet-partial { margin: 0; }
+.lp-hol .cal__day { aspect-ratio: auto; min-height: 48px; cursor: default; }
+.lp-hol__note { margin: var(--sp-3) 0 0; font-size: var(--text-xs); font-weight: 700; }
+@media (max-width: 520px) { .lp-vig .banner { flex-direction: column; align-items: flex-start; } }
+
+
+/* One-shot reveals: slide in, wipe open. JS adds .is-in, then .is-done. */
+.lp-js [data-lp-reveal] { transform: translateY(44px) rotate(var(--rot, 0deg)); clip-path: inset(0 0 100% 0);
+  transition: transform 480ms var(--lp-snap), clip-path 420ms steps(8, end); }
+.lp-js [data-lp-reveal].is-in { transform: none; clip-path: inset(-40px); }
+.lp-js [data-lp-reveal].is-done { clip-path: none; }
+
+/* ---- Final CTA --------------------------------------------------------------------- */
+.lp-final { background: var(--ink); color: var(--ink-inverse);
+  padding: var(--sp-8) var(--sp-5); text-align: center; overflow: hidden; }
+.lp-final { position: relative; }
+.lp-final__tile { position: absolute; display: none; width: 112px; }
+.lp-final__tile .verdict { min-width: 0; box-shadow: 4px 4px 0 var(--ink-inverse); border-color: var(--ink-inverse); color: var(--ink); }
+.lp-final__tile--a { left: 6%; top: 18%; transform: rotate(-8deg); }
+.lp-final__tile--b { right: 8%; top: 12%; transform: rotate(7deg); }
+.lp-final__tile--c { right: 14%; bottom: 14%; transform: rotate(-4deg); }
+@media (min-width: 1000px) { .lp-final__tile { display: block; } }
+.lp-final__in { position: relative; max-width: 900px; margin: 0 auto; padding: var(--sp-6) 0; }
+.lp-final__eyebrow { margin: 0 0 var(--sp-4); color: var(--acc-yellow); }
+.lp-final h2 { font-size: clamp(2.5rem, 8vw, 6rem); line-height: 1; margin: 0 0 var(--sp-7); }
+.lp-final__btn { min-height: 64px; padding-inline: var(--sp-7); font-size: var(--text-lg);
+  justify-content: center; border-color: var(--ink-inverse);
+  box-shadow: 8px 8px 0 var(--ink-inverse); }
+.lp-final__btn:hover { box-shadow: 12px 12px 0 var(--ink-inverse); }
+.lp-final__btn:active { box-shadow: none; }
+.lp-final__sub { margin: var(--sp-6) 0 0; }
+.lp-final__sub a { color: var(--ink-inverse); }
+.lp-final__sub a:hover { color: var(--ink); background: var(--acc-yellow); }
+.lp-final :focus-visible { outline-color: var(--acc-yellow); }
+
+/* ---- Footer -------------------------------------------------------------------------- */
+.lp-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4) var(--sp-5);
+  max-width: var(--lp-max); margin: 0 auto; padding: var(--sp-6) var(--sp-5); }
+.lp-foot p { flex: 1 1 280px; margin: 0; font-size: var(--text-sm); color: var(--ink-muted); }
+.lp-foot__nav { display: flex; gap: var(--sp-4); }
+.lp-foot__nav a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 700; }
+
+/* Short, wide viewports squeeze the hero; let it breathe less. */
+@media (min-width: 900px) and (max-height: 700px) {
+  .lp-hero { min-height: 0; }
+}
+
+/* Fit tweaks: the frame is capped at 560px, so on short viewports the denser
+   panes give up a little padding, and on tall ones scene 1 uses the room. */
+.lp-sticky .lp-pane--ladder .ladder__rung { padding: 5px var(--sp-4); }
+.lp-sticky .lp-ladder-card { padding: var(--sp-3) var(--sp-4); }
+.lp-sticky .lp-ladder-card .field { margin-bottom: var(--sp-2); }
+.lp-sticky .lp-ladder-card .field > label { margin-bottom: var(--sp-1); }
+.lp-sticky .lp-pane--ladder .ladder { margin: var(--sp-2) 0; gap: var(--sp-2); }
+@media (min-height: 780px) {
+  .lp-sticky .lp-lectures .lecture { padding: var(--sp-4) 0; }
+}
+.lp-skipbtn, .lp-daybtn { min-height: 44px; justify-content: center; }
