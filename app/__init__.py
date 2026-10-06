@@ -12,6 +12,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_login import LoginManager, login_url
 from flask_migrate import Migrate
+from flask_sitemap import Sitemap
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from sqlalchemy import event
@@ -94,6 +95,10 @@ def create_app(config_object=None) -> Flask:
     csrf.init_app(app)
     limiter.init_app(app)
     login_manager.init_app(app)
+    # Absolute URLs in /sitemap.xml follow the site's own scheme (https in
+    # production); Flask-Sitemap would otherwise default to http.
+    app.config["SITEMAP_URL_SCHEME"] = app.config.get("PREFERRED_URL_SCHEME", "http")
+    sitemap = Sitemap(app)   # per app: the instance keeps its generators
     login_manager.login_view = "auth.login"
     # "Please log in" is not good news; it was rendering in the green success
     # banner because that is what an uncategorised flash falls back to.
@@ -139,9 +144,24 @@ def create_app(config_object=None) -> Flask:
     app.register_blueprint(api_bp)
     app.register_blueprint(account_bp)
 
+    _register_sitemap(sitemap)
     _register_error_handlers(app)
     _register_security_headers(app)
     return app
+
+
+def _register_sitemap(sitemap: Sitemap) -> None:
+    """/sitemap.xml lists the pages a signed-out visitor, or a crawler, can see.
+
+    Listed by name rather than by walking the URL map: nearly every other route
+    sits behind sign-in and belongs to one student, so the extension's "include
+    every route" switch would advertise pages that only redirect to the login.
+    """
+    @sitemap.register_generator
+    def public_pages():
+        yield "core.dashboard", {}, None, "monthly", 1.0   # the landing page
+        yield "auth.register", {}, None, "yearly", 0.5
+        yield "auth.login", {}, None, "yearly", 0.3
 
 
 def _check_environment(app: Flask) -> None:

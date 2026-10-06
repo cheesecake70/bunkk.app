@@ -655,3 +655,16 @@ class TestTimezone:
         monkeypatch.setenv("BUNKK_TIMEZONE", "Asia/Mumbay")
         with pytest.raises(RuntimeError, match="BUNKK_TIMEZONE"):
             config._set_timezone()
+
+
+class TestSitemap:
+    def test_lists_only_the_public_pages(self, app):
+        resp = app.test_client().get("/sitemap.xml")
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/xml"
+        body = resp.get_data(as_text=True)
+        for path in ("/", "/register", "/login"):
+            assert f"<loc>http://localhost{path}</loc>" in body
+        # Everything else is one student's page behind sign-in.
+        assert body.count("<loc>") == 3
+        assert "/upload" not in body and "/healthz" not in body
