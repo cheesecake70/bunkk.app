@@ -4,6 +4,7 @@ flask-login==0.6.3
 flask-migrate==4.1.0
 flask-wtf==1.3.0
 flask-limiter==4.1.1
+flask-sitemap==0.4.0
 authlib==1.8.0
 requests==2.34.2
 python-dotenv==1.2.2
