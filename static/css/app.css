@@ -203,8 +203,13 @@
    before the page started. Below 640px the four destinations move to a fixed bar
    at the bottom, where a thumb already is. */
 .tabbar { display: none; }
-.setup-sheet .nav__menu-item { border-bottom: 1.5px dashed var(--ink); }
+/* In the dropdown a flex column stacks these links; in the sheet nothing does,
+   so they are blocks here or they run together on one line. */
+.setup-sheet .nav__menu-item { display: block; padding-inline: 0;
+  font-size: var(--text-base); border-bottom: 1.5px dashed var(--ink); }
 .setup-sheet .nav__menu-item:last-of-type { border-bottom: none; }
+/* Takes the sheet's opening focus, so the first link doesn't open ringed. */
+.setup-sheet .modal__title:focus { outline: none; }
 
 /* ---- Phone ------------------------------------------------------------------- */
 @media (max-width: 640px) {
