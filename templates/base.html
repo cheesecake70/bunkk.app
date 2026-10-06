@@ -88,7 +88,7 @@
   </nav>
 
   <dialog class="modal setup-sheet" id="setup-sheet">
-    <div class="modal__title">Setup</div>
+    <div class="modal__title" tabindex="-1" autofocus>Setup</div>
     <a class="nav__menu-item" href="{{ url_for('core.timetable') }}">Timetable</a>
     <a class="nav__menu-item" href="{{ url_for('core.calendar') }}">Semester calendar</a>
     <a class="nav__menu-item" href="{{ url_for('core.checkpoints') }}">Checkpoints</a>
