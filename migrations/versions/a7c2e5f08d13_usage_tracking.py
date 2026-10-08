@@ -4,14 +4,14 @@ Two timestamps on the user and one thin event table. Existing accounts start
 with both timestamps empty and fill them in on their next visit.
 
 Revision ID: a7c2e5f08d13
-Revises: f3b8d2a91c04
+Revises: b2d6f08a4c71
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = "a7c2e5f08d13"
-down_revision = "f3b8d2a91c04"
+down_revision = "b2d6f08a4c71"
 branch_labels = None
 depends_on = None
 
