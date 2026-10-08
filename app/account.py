@@ -18,6 +18,7 @@ from .auth import normalise_username, validate_username
 from .models import (
     Checkpoint,
     CourseAlias,
+    Event,
     Holiday,
     LectureChange,
     LectureInstance,
@@ -145,8 +146,9 @@ def purge_user(user: User) -> None:
             Checkpoint.semester_id.in_(semester_ids)
         ).delete(synchronize_session=False)
 
+    # Events go with the account: "deleted" has to include the record of use.
     for model in (LectureInstance, CourseAlias, PlannedAbsence,
-                  ReportSnapshot):
+                  ReportSnapshot, Event):
         db.session.query(model).filter_by(user_id=user.id).delete(
             synchronize_session=False
         )

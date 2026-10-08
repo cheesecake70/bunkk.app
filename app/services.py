@@ -11,7 +11,7 @@ from datetime import date
 from attendance_engine import Counts, CoverageReport, Dashboard, DateRange
 from attendance_engine import analyse, build_dashboard
 
-from . import db
+from . import db, tracking
 from .cache import per_request
 from .models import (
     LectureChange,
@@ -237,6 +237,8 @@ def set_predictions(user: User, predicted: str | None, *,
             row.predicted = predicted
 
     if previous:
+        if predicted is not None:
+            tracking.record(user, "prediction_made")
         db.session.commit()
     return previous
 

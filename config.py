@@ -110,6 +110,13 @@ class BaseConfig:
     #: DEBUG (see auth.dev_login); a laptop without an OAuth client needs it.
     DEV_LOGIN = _bool("BUNKK_DEV_LOGIN", "0")
 
+    #: Who may open /admin/stats (app/tracking.py). Empty means nobody; the
+    #: same figures are always available on the server from `flask stats`.
+    ADMIN_EMAILS = frozenset(
+        e.strip().lower()
+        for e in os.environ.get("BUNKK_ADMIN_EMAILS", "").split(",") if e.strip()
+    )
+
     #: Environment variables `create_app` insists on. Empty outside production.
     REQUIRED_ENV: tuple[str, ...] = ()
     #: Trust X-Forwarded-* from one hop (nginx / Caddy in front of gunicorn).

@@ -30,7 +30,7 @@ from attendance_engine import (
     skip_ladder,
 )
 
-from . import db
+from . import db, tracking
 from .cache import drop, per_request
 from .models import (
     Checkpoint,
@@ -418,6 +418,8 @@ def save_timetable(user, entries: list[Entry | Slot], *, source: str = "inferred
                 label=(entry.label or None) if entry.kind == "break" else None,
             )
         )
+    if source == "manual":
+        tracking.record(user, "timetable_saved")
     db.session.commit()
     # The grid these read was just rewritten. Dropped explicitly rather than
     # relying on nothing re-reading it later in the same request.
@@ -487,6 +489,7 @@ def set_day(user, on_date: date, kind: str | None, *, name: str | None = None) -
     # SQLite does not enforce String(120), so an unbounded name would be stored
     # in full and only fail on a database that does.
     existing.name = (name or "").strip()[:120] or None
+    tracking.record(user, "holiday_marked")
     db.session.commit()
     drop(holidays_for, calendar_rules, _windows)
 
@@ -525,6 +528,8 @@ def set_days(user, frm: date, to: date, kind: str | None,
             row.name = trimmed
         touched.append(day)
 
+    if kind is not None:
+        tracking.record(user, "holiday_marked")
     db.session.commit()
     drop(holidays_for, calendar_rules, _windows)
     return touched
@@ -586,6 +591,7 @@ def set_semester_end(user, end: date) -> None:
     semester = active_semester(user)
     if semester is not None:
         semester.end_date = end
+        tracking.record(user, "semester_end_set")
         db.session.commit()
         drop(_windows)
 
@@ -612,6 +618,7 @@ def add_checkpoint(user, on_date: date, label: str | None = None,
 
     db.session.add(Checkpoint(semester_id=semester.id, on_date=on_date,
                               label=((label or "").strip()[:120] or None)))
+    tracking.record(user, "checkpoint_added")
     db.session.commit()
     drop(_windows)
     return None

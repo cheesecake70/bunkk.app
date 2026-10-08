@@ -156,6 +156,8 @@ table.subjects { width: 100%; border-collapse: collapse; }
 .subjects tr:nth-child(even) td { background: var(--paper); }
 .subjects tr:hover td { background: var(--soft-yellow); cursor: pointer; }
 .subjects .subj-code { font-family: var(--font-mono); font-weight: 700; }
+/* Rows that go nowhere (the admin usage tables) shouldn't look clickable. */
+.subjects--plain tr:hover td { cursor: default; }
 
 /* ---- Banners (gap / staleness / diff nudges) ------------------------------- */
 .banner {

@@ -134,10 +134,11 @@ def create_app(config_object=None) -> Flask:
 
     from .account import bp as account_bp
     from .api import bp as api_bp
-    from . import auth
+    from . import auth, tracking
     from .routes import bp as core_bp
 
     auth.init_app(app)
+    tracking.init_app(app)
 
     app.register_blueprint(core_bp)
     app.register_blueprint(auth.bp)
