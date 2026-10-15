@@ -56,6 +56,12 @@ class User(UserMixin, db.Model):
     #: The last time a signed-in request arrived, to the nearest hour or so
     #: (tracking.SEEN_EVERY). This is the one that answers "who is active".
     last_seen_at = db.Column(db.DateTime)
+    #: When this person chose their attendance limits in the welcome flow. The
+    #: limits themselves default to 75/70, so without this there is no telling
+    #: a deliberate 75 from one nobody ever looked at. The rest of setup lives
+    #: on the semester (its end date) and the timetable, so it is not repeated
+    #: here — see `onboarding.next_required`.
+    setup_done_at = db.Column(db.DateTime)
     #: What the session cookie actually holds. SQLite hands a deleted row's id
     #: to the next account created, so a remember-me cookie carrying the id
     #: alone would sign its holder into a stranger's account. A random token
@@ -114,6 +120,10 @@ class Semester(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     session_label = db.Column(db.String(80), nullable=False)  # "2026-2027, Semester III"
     end_date = db.Column(db.Date)        # the one manual date input (advanced setup)
+    #: The end date was a rough guess ("I don't know yet"). Still a horizon —
+    #: a guess plans far better than nothing — but the app keeps asking for
+    #: the real date until someone saves one.
+    end_date_is_guess = db.Column(db.Boolean, nullable=False, default=False)
     #: Exactly one per user is active: the one the newest report named. Every
     #: figure on screen is scoped to it, so last term's lectures stop counting
     #: the moment this term's first report arrives.

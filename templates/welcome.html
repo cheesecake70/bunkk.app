@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Set up · Bunkk{% endblock %}
+
+{% block content %}
+<div class="welcome">
+
+  <ol class="rail" aria-label="Setup progress">
+    {% for seg in rail %}
+      <li class="rail__seg is-{{ seg.state }}" {% if seg.state == 'now' %}aria-current="step"{% endif %}>
+        <span class="rail__fill"></span>
+        <span class="rail__lbl">{{ seg.label }}</span>
+      </li>
+    {% endfor %}
+  </ol>
+
+{% if step == 'upload' %}
+  {# ---- 1. The report ---------------------------------------------------- #}
+  <h1 class="welcome__title">Drop your <mark>report</mark></h1>
+  <p class="welcome__sub">
+    Portal → Attendance → <b>Detailed</b> report → semester start to today → PDF.
+  </p>
+
+  <label class="dropzone" id="dropzone">
+    <input type="file" id="file" accept="application/pdf,.pdf">
+    <div class="dropzone__title">Tap to choose the PDF</div>
+    <div class="dropzone__hint" id="hint">or drag it here</div>
+  </label>
+
+  <div id="result" class="upload-result stack" aria-live="polite"
+       data-next="{{ url_for('setup.welcome') }}"></div>
+
+{% elif step == 'rules' %}
+  {# ---- 2. Limits + semester end, one screen ----------------------------- #}
+  <h1 class="welcome__title">Your college's <mark>rules</mark></h1>
+  <p class="welcome__sub">Every "can I skip?" is worked out from these.</p>
+
+  <form method="post" action="{{ url_for('setup.save_rules') }}" class="card stack--lg" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div>
+      <div class="limit-pair">
+        <label class="big-field">
+          <span>Each subject</span>
+          <div class="big-field__box">
+            <input class="input {% if errors.subject_limit %}is-error{% endif %}"
+                   name="subject_limit" inputmode="numeric" maxlength="3" placeholder="70"
+                   value="{{ form.subject_limit if 'subject_limit' in form else limits.subject }}"
+                   autofocus>
+          </div>
+        </label>
+        <label class="big-field">
+          <span>Overall</span>
+          <div class="big-field__box">
+            <input class="input {% if errors.overall_limit %}is-error{% endif %}"
+                   name="overall_limit" inputmode="numeric" maxlength="3" placeholder="75"
+                   value="{{ form.overall_limit if 'overall_limit' in form else limits.overall }}">
+          </div>
+        </label>
+      </div>
+      {% for field in ('subject_limit', 'overall_limit') %}
+        {% if errors[field] %}<div class="field__error">{{ errors[field] }}</div>{% endif %}
+      {% endfor %}
+    </div>
+
+    <div>
+      <label class="big-field big-field--date">
+        <span>Last day of classes</span>
+        <input class="input input--mono {% if errors.end_date %}is-error{% endif %}"
+               id="end_date" name="end_date" type="date" min="{{ today.isoformat() }}"
+               value="{{ form.end_date if 'end_date' in form else (semester_end.isoformat() if semester_end else '') }}">
+      </label>
+      {% if errors.end_date %}<div class="field__error">{{ errors.end_date }}</div>{% endif %}
+      <input type="hidden" name="guess" id="guess" value="{{ form.guess or '' }}">
+      <p style="margin:var(--sp-2) 0 0">
+        <button type="button" class="guess-link" id="guess-it"
+                data-date="{{ suggested_end.isoformat() }}">Not sure? Guess for me</button>
+        <span class="guess-tag" id="guess-tag" {% if form.guess != '1' %}hidden{% endif %}>rough guess — fix it later</span>
+      </p>
+    </div>
+
+    <button class="btn btn--primary btn--lg" type="submit" style="justify-self:start">Next →</button>
+  </form>
+
+{% elif step == 'timetable' %}
+  {# ---- Fallback: a timetable that couldn't be detected -------------------- #}
+  <h1 class="welcome__title">Hmm, no <mark>timetable</mark></h1>
+  <p class="welcome__sub">
+    Your report is too short to spot a weekly pattern. A longer one usually
+    fixes it.
+  </p>
+  <div class="choice">
+    <a class="btn btn--primary btn--lg" href="{{ url_for('core.upload') }}">Upload again</a>
+    <a class="btn btn--lg" href="{{ url_for('core.timetable') }}">Draw it myself</a>
+  </div>
+
+{% elif step == 'exams' %}
+  {# ---- 3. Checkpoints, optional ----------------------------------------- #}
+  <h1 class="welcome__title">Is your attendance checked before <mark>exams?</mark></h1>
+  <p class="welcome__sub">Add those dates and Bunkk plans to clear each one.</p>
+
+  {% if not checkpoints %}
+    <div class="choice" id="exam-choice">
+      <button type="button" class="btn btn--lg" id="exam-yes">Yep</button>
+      <form method="post" action="{{ url_for('setup.finish') }}" style="display:contents">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--primary btn--lg" type="submit">Nope →</button>
+      </form>
+    </div>
+  {% endif %}
+
+  <div id="exam-dates" {% if not checkpoints %}class="js-reveal"{% endif %}>
+    <form method="post" action="{{ url_for('core.add_checkpoint') }}" class="card" style="margin-top:var(--sp-5)">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="welcome">
+      <div class="row" style="align-items:flex-end;gap:var(--sp-3)">
+        <label class="big-field big-field--date" style="flex:1;min-width:150px">
+          <span>Audit date</span>
+          <input class="input input--mono" name="on_date" type="date" required
+                 min="{{ today.isoformat() }}"
+                 {% if semester_end %}max="{{ semester_end.isoformat() }}"{% endif %}>
+        </label>
+        <label class="big-field" style="flex:1;min-width:150px">
+          <span>Name <span class="text-muted">(optional)</span></span>
+          <input class="input" name="label" maxlength="120" placeholder="Mid-sems" style="height:56px">
+        </label>
+      </div>
+      <button class="btn" type="submit" style="margin-top:var(--sp-4)">+ Add</button>
+
+      {% if checkpoints %}
+        <div class="stack" style="margin-top:var(--sp-5)">
+          {% for cp in checkpoints %}
+            <div class="lecture">
+              <div>
+                <span class="mono">{{ cp.on_date|full_date }}</span>
+                {% if cp.label %}<b style="margin-left:var(--sp-2)">{{ cp.label }}</b>{% endif %}
+              </div>
+              <button class="btn btn--sm btn--ghost" type="submit" form="drop-cp-{{ cp.id }}"
+                      aria-label="Remove">✕</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </form>
+    {# Outside the add form: forms can't nest, so each ✕ points at its own. #}
+    {% for cp in checkpoints %}
+      <form method="post" id="drop-cp-{{ cp.id }}" hidden
+            action="{{ url_for('core.delete_checkpoint', checkpoint_id=cp.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="back" value="welcome">
+      </form>
+    {% endfor %}
+
+    <form method="post" action="{{ url_for('setup.finish') }}" style="margin-top:var(--sp-5)">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if checkpoints %}
+        <button class="btn btn--primary btn--lg" type="submit">Done →</button>
+      {% else %}
+        <button class="btn btn--ghost" type="submit">Skip →</button>
+      {% endif %}
+    </form>
+  </div>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if step == 'upload' %}
+  <script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% elif step == 'rules' %}
+<script>
+  /* "Guess for me" fills the date in and flags it as a guess; picking a date
+     yourself clears the flag. */
+  (function () {
+    var date = document.getElementById("end_date");
+    var guess = document.getElementById("guess");
+    var tag = document.getElementById("guess-tag");
+    document.getElementById("guess-it").addEventListener("click", function () {
+      date.value = this.dataset.date;
+      guess.value = "1";
+      tag.hidden = false;
+    });
+    date.addEventListener("input", function () {
+      guess.value = "";
+      tag.hidden = true;
+    });
+  })();
+</script>
+{% elif step == 'exams' %}
+<script>
+  /* The date form waits behind "Yes", so "Nope" is the one-tap path. Without
+     JavaScript it simply shows. */
+  (function () {
+    var dates = document.getElementById("exam-dates");
+    var yes = document.getElementById("exam-yes");
+    if (!yes || !dates.classList.contains("js-reveal")) return;
+    dates.hidden = true;
+    yes.addEventListener("click", function () {
+      document.getElementById("exam-choice").hidden = true;
+      dates.hidden = false;
+      dates.querySelector('input[name="on_date"]').focus();
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

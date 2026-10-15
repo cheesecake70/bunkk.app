@@ -44,7 +44,26 @@
 
   /* ---- rendering ---------------------------------------------------------- */
 
+  /* Inside the welcome flow nobody needs the diff of a first upload — it is
+     every lecture, "added". A stamp, a count, and on to the next screen. */
+  function renderWelcomeDone(data) {
+    dropzone.hidden = true;
+    result.innerHTML = "";
+    var done = el("div", "welcome-done");
+    done.appendChild(el("div", "stamp", "Got it ✓"));
+    var subjects = (data.new_subjects || []).length;
+    done.appendChild(el("p", null,
+      plural(data.added + data.unchanged + data.updated, "lecture") +
+      (subjects ? " · " + plural(subjects, "subject") : "") + ". Nice."));
+    var link = el("a", "btn btn--primary btn--lg", "Next →");
+    link.href = result.dataset.next;
+    done.appendChild(link);
+    result.appendChild(done);
+    window.setTimeout(function () { window.location.href = result.dataset.next; }, 1600);
+  }
+
   function renderDiff(data) {
+    if (result.dataset.next) { renderWelcomeDone(data); return; }
     result.innerHTML = "";
 
     var headline;
@@ -265,6 +284,10 @@
       .then(function (res) {
         if (!res.ok) {
           showError(res.body.error || "Something went wrong.", res.body.claimed_by);
+          return;
+        }
+        if (res.body.status === "duplicate" && result.dataset.next) {
+          window.location.href = result.dataset.next;
           return;
         }
         if (res.body.status === "duplicate") {

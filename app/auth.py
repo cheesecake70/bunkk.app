@@ -209,8 +209,8 @@ def google_callback():
 
     target = session.pop(NEXT_KEY, None)
     if created:
-        flash(f"Welcome to Bunkk. You're @{user.username} — change that any time in Settings.")
-        return redirect(url_for("core.upload"))
+        flash(f"Welcome, @{user.username}!")
+        return redirect(url_for("setup.welcome"))
     return redirect(target or url_for("core.dashboard"))
 
 
@@ -238,7 +238,7 @@ def dev_login():
         return redirect(url_for("auth.dev_login"))
     login_user(user, remember=True)
     tracking.note_login(user, created=created)
-    return redirect(url_for("core.upload" if created else "core.dashboard"))
+    return redirect(url_for("setup.welcome" if created else "core.dashboard"))
 
 
 def _google_userinfo() -> dict:

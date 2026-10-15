@@ -55,10 +55,10 @@ def upload(client, path=GOLDEN, filename="report.pdf"):
 
 
 class TestAuth:
-    def test_register_signs_you_in_and_sends_you_to_upload(self, client):
+    def test_register_signs_you_in_and_sends_you_to_the_welcome_flow(self, client):
         resp = register(client)
         assert resp.status_code == 302
-        assert resp.headers["Location"].endswith("/upload")
+        assert resp.headers["Location"].endswith("/welcome")
 
     def test_register_is_just_the_login_page(self, client):
         resp = client.get("/register")
@@ -316,12 +316,15 @@ class TestPages:
         assert ds["verdict"] != "danger"     # 58.3% worst case now clears 50%
 
 
-    def test_the_phone_tab_bar_and_setup_sheet_are_there(self, loaded):
+    def test_the_phone_tab_bar_is_there_and_setup_is_one_page(self, loaded):
         """The top nav wrapped into three rows on a phone; the four places
-        anyone goes now live in a bottom bar, with Setup as a sheet."""
+        anyone goes now live in a bottom bar. Setup is a page, not a sheet of
+        five links nobody opened."""
         html = loaded.get("/").get_data(as_text=True)
         assert 'class="tabbar"' in html
-        assert 'id="setup-sheet"' in html
+        assert 'id="setup-sheet"' not in html
+        tabbar = html[html.index('class="tabbar"'):]
+        assert 'href="/setup"' in tabbar[:tabbar.index("</nav>")]
 
     def test_signed_out_pages_have_no_tab_bar(self, client):
         html = client.get("/login").get_data(as_text=True)
@@ -347,12 +350,15 @@ class TestSettingsPageShape:
 
             assert db.session.query(Settings).one().staleness_days == 7
 
-    def test_setup_links_to_the_four_pages_you_set_up_once(self, loaded):
+    def test_setup_links_to_the_pages_you_set_up_once(self, loaded):
         html = loaded.get("/settings").get_data(as_text=True)
         for label in ("Edit timetable", "Calendar", "Checkpoints", "Subjects"):
-            assert label in html, f"{label} tile missing from Settings"
-        for path in ("/timetable", "/calendar", "/checkpoints", "/subjects"):
+            assert label in html, f"{label} missing from Setup"
+        for path in ("/timetable", "/calendar", "/subjects"):
             assert f'href="{path}"' in html
+        # Checkpoints and the semester end are edited in place, not linked.
+        assert 'action="/checkpoints"' in html
+        assert 'action="/calendar/end-date"' in html
 
     def test_per_subject_limits_no_longer_have_their_own_box(self, loaded):
         html = loaded.get("/settings").get_data(as_text=True)

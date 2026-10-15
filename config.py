@@ -121,6 +121,8 @@ class BaseConfig:
     REQUIRED_ENV: tuple[str, ...] = ()
     #: Trust X-Forwarded-* from one hop (nginx / Caddy in front of gunicorn).
     BEHIND_PROXY = False
+    #: Hold signed-in pages until the welcome flow is done (app/onboarding.py).
+    SETUP_GATE = True
 
 
 class DevConfig(BaseConfig):
@@ -139,6 +141,9 @@ class TestConfig(BaseConfig):
     # other test would otherwise have to carry a token and share a counter.
     WTF_CSRF_ENABLED = False
     RATELIMIT_ENABLED = False
+    # Most tests drive one page in a half-set-up account on purpose; the gate
+    # has tests of its own that switch it back on.
+    SETUP_GATE = False
 
 
 class ProdConfig(BaseConfig):

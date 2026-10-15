@@ -1,13 +1,225 @@
 {% extends "base.html" %}
-{% block title %}Settings · Bunkk{% endblock %}
+{% block title %}Setup · Bunkk{% endblock %}
 
 {% block content %}
 <div class="page-head">
-  <div class="eyebrow">Your account &amp; your limits</div>
-  <h1>Settings</h1>
+  <div class="eyebrow">Everything Bunkk needs to know</div>
+  <h1>Setup</h1>
+  <p class="page-head__sub">
+    Your limits, your semester and your account, on one page. Change anything
+    here and every verdict updates with it.
+  </p>
 </div>
 
+{# ---- At a glance: what's set, what isn't. Each one jumps to its card. --- #}
+<nav class="setup-status" aria-label="Setup at a glance">
+  <a class="setup-status__item is-ok" href="#limits">
+    <span class="setup-status__mark">✓</span>
+    <span><b class="mono">{{ settings.overall_limit }}% / {{ settings.subject_limit }}%</b> limits</span>
+  </a>
+  {% if semester_end and not end_is_guess %}
+    <a class="setup-status__item is-ok" href="#semester-end">
+      <span class="setup-status__mark">✓</span>
+      <span>Ends <b class="mono">{{ semester_end|long_date }}</b></span>
+    </a>
+  {% elif semester_end %}
+    <a class="setup-status__item is-warn" href="#semester-end">
+      <span class="setup-status__mark">!</span>
+      <span>End date is a guess</span>
+    </a>
+  {% else %}
+    <a class="setup-status__item is-warn" href="#semester-end">
+      <span class="setup-status__mark">!</span>
+      <span>No end date</span>
+    </a>
+  {% endif %}
+  <a class="setup-status__item {{ 'is-ok' if classes_a_week else 'is-warn' }}" href="#timetable">
+    <span class="setup-status__mark">{{ '✓' if classes_a_week else '!' }}</span>
+    <span>{% if classes_a_week %}<b class="mono">{{ classes_a_week }}</b> classes a week{% else %}No timetable{% endif %}</span>
+  </a>
+  <a class="setup-status__item" href="#checkpoints">
+    <span class="setup-status__mark mono">{{ checkpoints|length }}</span>
+    <span>{{ 'checkpoint' if checkpoints|length == 1 else 'checkpoints' }}</span>
+  </a>
+  <a class="setup-status__item" href="#holidays">
+    <span class="setup-status__mark mono">{{ holidays|length }}</span>
+    <span>{{ 'holiday' if holidays|length == 1 else 'holidays' }} ahead</span>
+  </a>
+</nav>
+
 <div class="stack--lg">
+
+  {# ---- Limits -------------------------------------------------------- #}
+  <form method="post" action="{{ url_for('core.settings') }}" class="card" id="limits">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h3>Attendance limits</h3>
+    <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
+      The subject limit applies to each course <em>and lecture type</em> on its own —
+      theory and lab each have to clear it separately.
+    </p>
+
+    <div class="row" style="align-items:flex-start">
+      <div class="field">
+        <label for="overall_limit">Overall %</label>
+        <input class="input input--mono {% if errors.overall_limit %}is-error{% endif %}"
+               id="overall_limit" name="overall_limit" inputmode="numeric"
+               value="{{ settings.overall_limit }}" style="width:120px">
+        {% if errors.overall_limit %}
+          <div class="field__error">{{ errors.overall_limit }}</div>
+        {% else %}
+          <div class="field__hint">Across every lecture.</div>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label for="subject_limit">Subject %</label>
+        <input class="input input--mono {% if errors.subject_limit %}is-error{% endif %}"
+               id="subject_limit" name="subject_limit" inputmode="numeric"
+               value="{{ settings.subject_limit }}" style="width:120px">
+        {% if errors.subject_limit %}
+          <div class="field__error">{{ errors.subject_limit }}</div>
+        {% else %}
+          <div class="field__hint">Default for every subject.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="row--between">
+      <button class="btn btn--primary" type="submit">Save limits</button>
+      <span class="text-muted" style="font-size:var(--text-sm)">
+        {% if custom_limits %}{{ custom_limits }} {{ 'subject has' if custom_limits == 1 else 'subjects have' }} a limit of {{ 'its' if custom_limits == 1 else 'their' }} own ·{% endif %}
+        <a href="{{ url_for('core.subjects') }}">One subject different?</a>
+      </span>
+    </div>
+  </form>
+
+{% if has_semester %}
+  {# ---- Semester end ------------------------------------------------- #}
+  <form method="post" action="{{ url_for('core.set_end_date') }}"
+        class="card {% if end_is_guess or not semester_end %}card--yellow{% endif %}" id="semester-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="back" value="setup">
+    <h3>Semester end</h3>
+    {% if end_is_guess %}
+      <p style="margin-top:0;font-size:var(--text-sm)">
+        <b>This is a rough guess.</b> Bunkk is planning to it for now — put the
+        real last day of classes in when you know it.
+      </p>
+    {% else %}
+      <p class="text-muted" style="margin-top:0;font-size:var(--text-sm)">
+        The last day of classes. Every "you can still miss…" counts the lectures
+        between today and this date.
+      </p>
+    {% endif %}
+    <div class="row" style="align-items:flex-end">
+      <div class="field" style="margin:0">
+        <label for="end_date">Last day of classes</label>
+        <input class="input input--mono" id="end_date" name="end_date" type="date" required
+               value="{{ semester_end.isoformat() if semester_end else '' }}">
+      </div>
+      <button class="btn btn--primary" type="submit">
+        {{ 'Confirm date' if end_is_guess else ('Update' if semester_end else 'Save') }}
+      </button>
+    </div>
+  </form>
+
+  {# ---- Checkpoints --------------------------------------------------- #}
+  <div class="card" id="checkpoints">
+    <h3>Checkpoints</h3>
+    <p class="text-muted" style="margin-top:0;font-size:var(--text-sm)">
+      Dates your college audits attendance, like before the mid-sems. Bunkk plans
+      to the next one instead of the semester end, because lectures after an
+      audit can't help you clear it.
+    </p>
+
+    <div class="stack" style="margin-bottom:var(--sp-4)">
+      {% for cp in checkpoints %}
+        <div class="lecture {% if cp.on_date < today %}is-past{% endif %}">
+          <div>
+            <span class="mono">{{ cp.on_date|full_date }}</span>
+            {% if cp.label %}<span style="margin-left:var(--sp-2)">{{ cp.label }}</span>{% endif %}
+          </div>
+          <div class="row" style="gap:var(--sp-2)">
+            {% if cp.on_date < today %}
+              <span class="badge badge--neutral">Passed</span>
+            {% elif next_checkpoint and cp.id == next_checkpoint.id %}
+              <span class="badge badge--warn">Planning to this one</span>
+            {% endif %}
+            <form method="post" style="margin:0"
+                  action="{{ url_for('core.delete_checkpoint', checkpoint_id=cp.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="back" value="setup">
+              <button class="btn btn--sm btn--danger" type="submit">Remove</button>
+            </form>
+          </div>
+        </div>
+      {% else %}
+        <p class="text-muted" style="margin:0;font-size:var(--text-sm)">
+          None yet — Bunkk is planning all the way to the semester end.
+        </p>
+      {% endfor %}
+    </div>
+
+    <form method="post" action="{{ url_for('core.add_checkpoint') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="setup">
+      <div class="row" style="align-items:flex-end;gap:var(--sp-3)">
+        <div class="field" style="margin:0">
+          <label for="on_date">Date</label>
+          <input class="input input--mono" id="on_date" name="on_date" type="date" required
+                 {% if semester_end %}max="{{ semester_end.isoformat() }}"{% endif %}>
+        </div>
+        <div class="field" style="margin:0;flex:1;min-width:160px">
+          <label for="label">Name <span class="text-muted">(optional)</span></label>
+          <input class="input" id="label" name="label" maxlength="120" placeholder="Mid-sem audit">
+        </div>
+        <button class="btn" type="submit">Add checkpoint</button>
+      </div>
+    </form>
+  </div>
+
+  {# ---- The two big editors, summarised -------------------------------- #}
+  <div class="setup-grid">
+    <a class="setup-tile card--tint-1" id="timetable" href="{{ url_for('core.timetable') }}">
+      <div class="setup-tile__title">Edit timetable</div>
+      <div class="setup-tile__note">
+        {% if classes_a_week %}
+          {{ classes_a_week }} classes a week ·
+          {{ 'detected from your reports, kept up to date on every upload' if timetable_detected else 'set by you' }}
+        {% else %}
+          Not set yet — add your weekly classes.
+        {% endif %}
+      </div>
+    </a>
+    <a class="setup-tile card--tint-3" id="holidays" href="{{ url_for('core.calendar') }}">
+      <div class="setup-tile__title">Calendar</div>
+      <div class="setup-tile__note">
+        {% if holidays %}
+          {{ holidays|length }} {{ 'holiday' if holidays|length == 1 else 'holidays' }} ahead,
+          next {{ holidays[0].on_date|long_date }}.
+        {% else %}
+          No holidays marked. Add college holidays so they don't count as lectures.
+        {% endif %}
+      </div>
+    </a>
+    <a class="setup-tile card--tint-4" href="{{ url_for('core.subjects') }}">
+      <div class="setup-tile__title">Subjects</div>
+      <div class="setup-tile__note">
+        {{ subjects|length }} {{ 'subject' if subjects|length == 1 else 'subjects' }} —
+        rename them, or give one a limit of its own.
+      </div>
+    </a>
+  </div>
+{% else %}
+  <div class="card card--yellow">
+    <h3>Upload a report to set up the rest</h3>
+    <p style="margin-top:0;font-size:var(--text-sm)">
+      Your semester, timetable and subjects all come from your first report.
+    </p>
+    <a class="btn btn--primary" href="{{ url_for('setup.welcome') }}">Start setup</a>
+  </div>
+{% endif %}
+
+  <h2 class="section-title" style="margin:var(--sp-5) 0 0">Account</h2>
 
   {# ---- Profile ------------------------------------------------------- #}
   <div class="card">
@@ -40,75 +252,16 @@
       You sign in with Google, so there's no password to change. If you used a
       shared laptop, sign every other device out. This one stays put.
     </p>
-    <form method="post" action="{{ url_for('account.sign_out_everywhere') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn--primary" type="submit">Sign out other devices</button>
-    </form>
-  </div>
-
-  {# ---- Limits -------------------------------------------------------- #}
-  <form method="post" class="stack--lg">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="card">
-      <h3>Attendance limits</h3>
-      <p class="text-muted" style="font-size:var(--text-sm);margin-top:0">
-        The subject limit applies to each course <em>and lecture type</em> on its own —
-        theory and lab each have to clear it separately.
-      </p>
-
-      <div class="field">
-        <label for="subject_limit">Subject limit %</label>
-        <input class="input input--mono {% if errors.subject_limit %}is-error{% endif %}"
-               id="subject_limit" name="subject_limit" inputmode="numeric"
-               value="{{ settings.subject_limit }}">
-        {% if errors.subject_limit %}
-          <div class="field__error">{{ errors.subject_limit }}</div>
-        {% else %}
-          <div class="field__hint">Default for every subject.</div>
-        {% endif %}
-      </div>
-
-      <div class="field" style="margin-bottom:0">
-        <label for="overall_limit">Overall limit %</label>
-        <input class="input input--mono {% if errors.overall_limit %}is-error{% endif %}"
-               id="overall_limit" name="overall_limit" inputmode="numeric"
-               value="{{ settings.overall_limit }}">
-        {% if errors.overall_limit %}
-          <div class="field__error">{{ errors.overall_limit }}</div>
-        {% else %}
-          <div class="field__hint">Across every lecture of every subject.</div>
-        {% endif %}
-      </div>
-    </div>
-
     <div class="row">
-      <button class="btn btn--primary" type="submit">Save settings</button>
-      <a class="btn btn--ghost" href="{{ url_for('core.dashboard') }}">Cancel</a>
-    </div>
-  </form>
-
-  {# ---- The rest of setup ----------------------------------------------
-     Outside the limits form on purpose: these are links, and nesting them in
-     the form meant following one threw away whatever you'd just typed above. #}
-  <div class="card">
-    <h3>Set up</h3>
-    <div class="setup-grid" style="margin-top:var(--sp-3)">
-      <a class="setup-tile card--tint-1" href="{{ url_for('core.timetable') }}">
-        <div class="setup-tile__title">Edit timetable</div>
-        <div class="setup-tile__note">Your weekly grid of classes and breaks.</div>
-      </a>
-      <a class="setup-tile card--tint-3" href="{{ url_for('core.calendar') }}">
-        <div class="setup-tile__title">Calendar</div>
-        <div class="setup-tile__note">Semester dates, holidays, planned absences.</div>
-      </a>
-      <a class="setup-tile card--tint-6" href="{{ url_for('core.checkpoints') }}">
-        <div class="setup-tile__title">Checkpoints</div>
-        <div class="setup-tile__note">Deadlines your attendance has to clear.</div>
-      </a>
-      <a class="setup-tile card--tint-4" href="{{ url_for('core.subjects') }}">
-        <div class="setup-tile__title">Subjects</div>
-        <div class="setup-tile__note">Names, short codes and per-subject limits.</div>
-      </a>
+      <form method="post" action="{{ url_for('account.sign_out_everywhere') }}" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--primary" type="submit">Sign out other devices</button>
+      </form>
+      {# The phone layout has no top bar, so signing out lives here too. #}
+      <form method="post" action="{{ url_for('auth.logout') }}" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--ghost" type="submit">Sign out</button>
+      </form>
     </div>
   </div>
 

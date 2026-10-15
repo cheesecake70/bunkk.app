@@ -87,6 +87,43 @@ def subject_limit(subject: Subject, settings: Settings) -> int:
     return subject.custom_limit if subject.custom_limit is not None else settings.subject_limit
 
 
+def apply_limits(settings: Settings, form, *, required: bool = False) -> dict[str, str]:
+    """Set the overall and subject limits from a form; returns errors by field.
+
+    A blank field leaves its limit alone, unless `required` — the welcome flow
+    shows empty boxes on purpose, and an empty box there is a question
+    skipped, not a "keep it as it is".
+    """
+    errors: dict[str, str] = {}
+
+    def percent(field: str, label: str) -> int | None:
+        raw = (form.get(field) or "").strip()
+        if not raw:
+            if required:
+                errors[field] = f"Fill in the {label.lower()}."
+            return None
+        try:
+            value = int(raw)
+        except ValueError:
+            errors[field] = f"{label} must be a whole number."
+            return None
+        if not 0 <= value <= 100:
+            errors[field] = "Must be between 0 and 100."
+            return None
+        return value
+
+    overall = percent("overall_limit", "Overall limit")
+    subject = percent("subject_limit", "Subject limit")
+    if overall is not None:
+        settings.overall_limit = overall
+    if subject is not None:
+        settings.subject_limit = subject
+
+    # `staleness_days` is no longer a setting anyone turns — it keeps its default
+    # and still drives the "your report is N days old" banners.
+    return errors
+
+
 def apply_subject_edits(subject: Subject, siblings: list[Subject],
                         values: dict) -> dict[str, str]:
     """Validate and apply one subject's edits, returning field -> message.

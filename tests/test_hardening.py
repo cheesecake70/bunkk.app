@@ -114,7 +114,7 @@ class TestCsrf:
         register(client)
         token = token_from(client.get("/settings").get_data(as_text=True))
         resp = rename(client, "changed", csrf_token=token)
-        assert resp.status_code == 302 and "/settings" in resp.headers["Location"]
+        assert resp.status_code == 302 and "/setup" in resp.headers["Location"]
         assert current_username(app) == "changed"
 
     def test_the_json_api_needs_the_header(self, app):

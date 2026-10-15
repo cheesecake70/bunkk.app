@@ -134,7 +134,7 @@ def create_app(config_object=None) -> Flask:
 
     from .account import bp as account_bp
     from .api import bp as api_bp
-    from . import auth, tracking
+    from . import auth, onboarding, tracking
     from .routes import bp as core_bp
 
     auth.init_app(app)
@@ -144,6 +144,7 @@ def create_app(config_object=None) -> Flask:
     app.register_blueprint(auth.bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(account_bp)
+    app.register_blueprint(onboarding.bp)
 
     _register_sitemap(sitemap)
     _register_error_handlers(app)

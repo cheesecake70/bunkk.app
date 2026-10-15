@@ -19,7 +19,6 @@ from attendance_engine import (
     Occurrence,
     PlannedLecture,
     Slot,
-    SlotCandidate,
     Wallet,
     build_wallet,
     count_by_subject,
@@ -35,6 +34,7 @@ from .cache import drop, per_request
 from .models import (
     Checkpoint,
     Holiday,
+    LectureInstance,
     PlannedAbsence,
     Subject,
     TimetableSlot,
@@ -59,6 +59,11 @@ STRIP_DAYS = 14
 #: projects day by day out to the horizon, so a mistyped year is not just a
 #: wrong number — it is a term several thousand years long.
 MAX_SEMESTER_DAYS = 366
+
+#: The rough semester end offered to someone who doesn't know theirs: about
+#: four and a half months from the first lecture, and at least a month out.
+SEMESTER_GUESS_DAYS = 135
+MIN_GUESS_DAYS_AHEAD = 30
 
 
 def forget_derived() -> None:
@@ -112,12 +117,79 @@ class Windows:
 # ---------------------------------------------------------------------------
 
 
-def inferred_candidates(user) -> list[SlotCandidate]:
+#: How far back from the newest lecture auto-detection looks. Long enough to
+#: see every weekly class at least twice through a holiday, short enough that a
+#: class which moved slot mid-semester stops being drawn in its old one.
+DETECT_RECENT_DAYS = 28
+
+#: A report spanning fewer days than this can't show any weekday twice, so the
+#: "seen in two weeks" rule would throw away every class in it.
+DETECT_MIN_SPAN_DAYS = 14
+
+
+def detected_timetable(user) -> list[Entry]:
+    """The weekly grid the reports imply, breaks drawn in.
+
+    Nobody reads a timetable they're asked to confirm — they tap "looks right".
+    So the grid is taken straight from the reports instead, and kept honest by
+    re-detecting on every upload (`adopt_detected_timetable`).
+
+    Only the last few weeks count, so a reshuffle shows up as soon as the
+    reports do. Inside that window a class has to recur in two different weeks
+    to count as weekly — unless the reports are too short to show anything
+    twice, in which case every class seen is the best guess there is, and the
+    next upload corrects it.
+    """
     rows = [
         LectureRow(l.subject_id, l.on_date, l.start_time, l.end_time)
         for l in _ledger_query(user).all()
     ]
-    return infer_slots(rows)
+    if not rows:
+        return []
+    latest = max(r.on_date for r in rows)
+    recent = [r for r in rows
+              if r.on_date > latest - timedelta(days=DETECT_RECENT_DAYS)]
+    span = (latest - min(r.on_date for r in recent)).days + 1
+
+    candidates = infer_slots(recent)
+    if span >= DETECT_MIN_SPAN_DAYS:
+        candidates = [c for c in candidates if c.is_confident]
+    return fill_gaps([
+        Entry(c.slot.weekday, c.slot.start_time, c.slot.end_time,
+              kind="class", subject_id=c.slot.subject_id)
+        for c in candidates
+    ])
+
+
+def adopt_detected_timetable(user) -> bool:
+    """Save the detected grid, unless the student has drawn their own.
+
+    A grid anyone edited by hand (`source="manual"`) is theirs, and no upload
+    may overwrite it. Otherwise the stored grid follows the reports, and an
+    unchanged one is left alone so an upload doesn't mint an identical version.
+    Returns whether anything was saved.
+    """
+    current = active_version(user)
+    if current is not None and current.source == "manual":
+        return False
+    entries = storable_entries(user, detected_timetable(user))
+    if not any(e.kind == "class" for e in entries):
+        return False
+
+    def shape(blocks):
+        return {(b.weekday, b.start_time, b.end_time, b.kind,
+                 b.subject_id if b.kind == "class" else None) for b in blocks}
+
+    if current is not None and shape(timetable_entries(user)) == shape(entries):
+        return False
+    save_timetable(user, entries, source="inferred")
+    return True
+
+
+def timetable_is_detected(user) -> bool:
+    """Is the current grid still the one the reports implied?"""
+    version = active_version(user)
+    return version is not None and version.source == "inferred"
 
 
 @per_request
@@ -392,9 +464,12 @@ def save_timetable(user, entries: list[Entry | Slot], *, source: str = "inferred
     version = None
     if replace:
         current = active_version(user)
-        if (current is not None and current.source == source
-                and current.valid_from == effective):
+        # A detected grid corrected the same day is not history worth keeping:
+        # it was never the student's, so their first edit simply takes it over.
+        if (current is not None and current.valid_from == effective
+                and current.source in (source, "inferred")):
             db.session.query(TimetableSlot).filter_by(version_id=current.id).delete()
+            current.source = source
             version = current
 
     if version is None:
@@ -587,11 +662,43 @@ def horizon_end(user, on_or_after: date | None = None) -> date | None:
     return min(row.on_date, end) if row else end
 
 
-def set_semester_end(user, end: date) -> None:
+def semester_end_is_guess(user) -> bool:
+    semester = active_semester(user)
+    return bool(semester and semester.end_date and semester.end_date_is_guess)
+
+
+def suggested_semester_end(user, today: date | None = None) -> date:
+    """A rough end date for someone who doesn't know theirs.
+
+    Semesters run about four and a half months from the first lecture. Never
+    in the past, and never so close that nothing is left to plan.
+    """
+    today = today or date.today()
+    first = _ledger_query(user).with_entities(db.func.min(LectureInstance.on_date)).scalar()
+    guess = (first or today) + timedelta(days=SEMESTER_GUESS_DAYS)
+    return max(guess, today + timedelta(days=MIN_GUESS_DAYS_AHEAD))
+
+
+def parse_semester_end(raw, today: date | None = None) -> tuple[date | None, str | None]:
+    """A semester end from a form field: (date, None), or (None, why not)."""
+    today = today or date.today()
+    try:
+        end = date.fromisoformat((raw or "").strip())
+    except ValueError:
+        return None, "Enter the semester end date as YYYY-MM-DD."
+    if end <= today:
+        return None, "The semester end date needs to be in the future."
+    if end > today + timedelta(days=MAX_SEMESTER_DAYS):
+        return None, "That's more than a year away — check the year."
+    return end, None
+
+
+def set_semester_end(user, end: date, *, guess: bool = False) -> None:
     semester = active_semester(user)
     if semester is not None:
         semester.end_date = end
-        tracking.record(user, "semester_end_set")
+        semester.end_date_is_guess = guess
+        tracking.record(user, "semester_end_guessed" if guess else "semester_end_set")
         db.session.commit()
         drop(_windows)
 

@@ -210,7 +210,19 @@ def _merge_or_ask(user, semester, snapshot, report, *, before=None) -> MergeResu
     result.new_subjects = created
     tracking.record(user, "report_uploaded")
     db.session.commit()
+    _follow_timetable(user)
     return result
+
+
+def _follow_timetable(user: User) -> None:
+    """Keep a detected timetable in step with what the reports now say.
+
+    After the merge has committed, so a grid that can't be drawn never costs
+    the student their upload.
+    """
+    from .planning import adopt_detected_timetable, forget_derived  # local: avoids a cycle
+    forget_derived()
+    adopt_detected_timetable(user)
 
 
 def _resume_staged(user: User, snapshot: ReportSnapshot) -> MergeResult:
@@ -263,6 +275,7 @@ def resolve_proposals(user: User, snapshot_id: int, decisions: dict[str, str]) -
     result.new_subjects = created
     tracking.record(user, "report_uploaded")
     db.session.commit()
+    _follow_timetable(user)
     return result
 
 

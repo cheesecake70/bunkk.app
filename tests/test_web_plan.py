@@ -104,7 +104,7 @@ class TestTimetablePage:
         and every block it drew is editable."""
         html = client.get("/timetable").get_data(as_text=True)
         assert "Your week" in html
-        assert "Drafted from your reports" in html
+        assert "Detected from your reports" in html
         assert 'class="tt__block' in html
 
     def test_clashing_blocks_are_flagged(self, client):
@@ -220,7 +220,7 @@ class TestTimetablePage:
             "subject_id": ["9999"], "label": [""],
         })
         with app.app_context():
-            assert db.session.query(TimetableSlot).count() == 0
+            assert db.session.query(TimetableSlot).filter_by(subject_id=9999).count() == 0
 
 
 class TestCalendarPage:
@@ -304,8 +304,9 @@ class TestHolidayRanges:
 
 class TestAdvancedDashboard:
     def test_before_setup_the_dashboard_nudges(self, client):
+        # The timetable came from the upload; the end date is all that's left.
         html = client.get("/").get_data(as_text=True)
-        assert "Confirm timetable" in html
+        assert "Set end date" in html
 
     def test_after_setup_the_hero_verdict_appears(self, client):
         confirm_timetable(client)
@@ -509,10 +510,11 @@ class TestAdvancedDashboard:
         confirm_timetable(client)
         set_end(client)
 
-        for page in ("/", "/plan"):
+        for page in ("/setup", "/plan"):
             html = client.get(page).get_data(as_text=True)
             assert 'href="/calendar"' in html, f"no way to reach the calendar from {page}"
             assert 'href="/timetable"' in html, f"no way to reach the timetable from {page}"
+        assert 'href="/setup"' in client.get("/").get_data(as_text=True)
 
     def test_held_since_last_report_is_surfaced(self, client):
         """Report covers to 12.08; today is 16.08 — Thu 13.08 and Fri 14.08
@@ -648,7 +650,7 @@ class TestPlanPage:
     def test_not_ready_still_shows_attendance_and_the_next_step(self, client):
         """A missing timetable costs you the planning half, not your ledger."""
         html = client.get("/plan").get_data(as_text=True)
-        assert "Confirm timetable" in html
+        assert "Set end date" in html
         assert "Attended" in html
 
     def test_ready_shows_the_month_grid_and_the_plan_controls(self, client):

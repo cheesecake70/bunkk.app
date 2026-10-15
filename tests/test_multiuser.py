@@ -58,7 +58,7 @@ class TestRegistration:
     def test_signing_in_creates_the_account(self, app):
         client = app.test_client()
         resp = register(client, "aditi@example.com")
-        assert resp.status_code == 302 and resp.headers["Location"].endswith("/upload")
+        assert resp.status_code == 302 and resp.headers["Location"].endswith("/welcome")
         with app.app_context():
             user = db.session.query(User).one()
             assert (user.email, user.username) == ("aditi@example.com", "aditi")
@@ -137,7 +137,7 @@ class TestLoginRedirects:
                    return_value=("", 302, {"Location": "https://accounts.google.com/o/x"})):
             client.get("/login/google?next=https://evil.example.com/steal")
         resp = register(client, "m@example.com")
-        assert resp.headers["Location"].endswith("/upload")
+        assert resp.headers["Location"].endswith("/welcome")
         client.post("/logout")
         with patch("authlib.integrations.flask_client.apps.FlaskOAuth2App.authorize_redirect",
                    return_value=("", 302, {"Location": "https://accounts.google.com/o/x"})):
@@ -329,7 +329,7 @@ class TestSettingsIsOnePage:
         register(client, "m@example.com")
         resp = client.get("/account/")
         assert resp.status_code == 302
-        assert resp.headers["Location"].endswith("/settings")
+        assert resp.headers["Location"].endswith("/setup")
 
     def test_settings_holds_profile_limits_and_deletion(self, app):
         client = app.test_client()

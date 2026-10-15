@@ -20,11 +20,12 @@ from flask_login import current_user, login_required
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from . import db, planning
+from . import db, onboarding, planning
 from .filters import WEEKDAYS
 from .models import PlannedAbsence, Subject
 from .services import (
     UNKNOWN_STATUSES,
+    apply_limits,
     apply_subject_edits,
     changes_for_lectures,
     coverage_for,
@@ -267,16 +268,11 @@ def timetable():
     if not entries:
         # First visit: offer the inferred grid as a starting point rather than
         # an empty week. Nothing is saved until the user presses save.
-        drafted = [
-            planning.Entry(c.slot.weekday, c.slot.start_time, c.slot.end_time,
-                           kind="class", subject_id=c.slot.subject_id)
-            for c in planning.inferred_candidates(current_user) if c.is_confident
-        ]
-        inferred = bool(drafted)
-        # The gaps between inferred classes are free periods whether or not the
-        # reports named them, and drawing them makes "leave before lunch"
-        # mean something the first time the grid is seen.
-        entries = planning.fill_gaps(drafted)
+        # Uploads normally save the detected grid themselves, so this is the
+        # rare report too thin to detect anything from — or one uploaded
+        # before detection existed.
+        entries = planning.detected_timetable(current_user)
+        inferred = any(e.kind == "class" for e in entries)
     else:
         inferred = False
 
@@ -287,6 +283,7 @@ def timetable():
         subjects_by_id={s.id: s for s in subjects},
         weekdays=WEEKDAYS,
         inferred=inferred,
+        detected=planning.timetable_is_detected(current_user),
         overlaps=planning.overlapping(entries),
     )
 
@@ -358,25 +355,41 @@ def calendar():
     )
 
 
+#: Where a form posted from the Setup page or the welcome flow goes back to,
+#: named by its hidden `back` field. Names, never URLs: a URL from a form
+#: would be an open redirect.
+BACK_TO = {
+    "setup": ("core.settings", {}),
+    "welcome": ("setup.welcome", {"step": "exams"}),
+}
+
+
+def _back(default: str, anchor: str = ""):
+    """Redirect to wherever the form came from, or to `default`.
+
+    `anchor` lands you back on the card you used, on the one long page where
+    that matters — Setup.
+    """
+    back = request.form.get("back") or ""
+    if back not in BACK_TO:
+        return redirect(url_for(default))
+    endpoint, args = BACK_TO[back]
+    url = url_for(endpoint, **args)
+    return redirect(url + f"#{anchor}" if back == "setup" and anchor else url)
+
+
 @bp.post("/calendar/end-date")
 @login_required
 def set_end_date():
-    raw = (request.form.get("end_date") or "").strip()
-    try:
-        end = date.fromisoformat(raw)
-    except ValueError:
-        flash("Enter the semester end date as YYYY-MM-DD.", "error")
-        return redirect(url_for("core.calendar"))
-    if end <= date.today():
-        flash("The semester end date needs to be in the future.", "error")
-        return redirect(url_for("core.calendar"))
-    if end > date.today() + timedelta(days=planning.MAX_SEMESTER_DAYS):
-        flash("That's more than a year away — check the year.", "error")
-        return redirect(url_for("core.calendar"))
+    end, error = planning.parse_semester_end(request.form.get("end_date"))
+    if error:
+        flash(error, "error")
+        return _back("core.calendar", "semester-end")
 
+    # Saving a date here confirms it, clearing any rough guess from setup.
     planning.set_semester_end(current_user, end)
     flash(f"Semester ends {end:%d %b %Y} — projections are live.")
-    return redirect(url_for("core.dashboard"))
+    return _back("core.dashboard", "semester-end")
 
 
 @bp.get("/checkpoints")
@@ -408,16 +421,27 @@ def add_checkpoint():
     try:
         on_date = date.fromisoformat(raw)
     except ValueError:
+        if request.form.get("back") in BACK_TO:
+            flash("Enter the date as YYYY-MM-DD.", "error")
+            return _back("core.checkpoints", "checkpoints")
         return _checkpoints_page("Enter the date as YYYY-MM-DD.", 400)
 
     error = planning.add_checkpoint(
         current_user, on_date, (request.form.get("label") or "").strip()
     )
     if error:
+        # Setup and the welcome flow have no form of their own to re-render
+        # the error into, so it travels as a flash instead.
+        if request.form.get("back") in BACK_TO:
+            flash(error, "error")
+            return _back("core.checkpoints", "checkpoints")
         return _checkpoints_page(error, 400)
 
-    flash(f"Checkpoint added for {on_date:%d %b %Y}.")
-    return redirect(url_for("core.checkpoints"))
+    # The welcome flow lists it straight underneath; a banner would only
+    # push the screen down.
+    if request.form.get("back") != "welcome":
+        flash(f"Checkpoint added for {on_date:%d %b %Y}.")
+    return _back("core.checkpoints", "checkpoints")
 
 
 @bp.post("/checkpoints/<int:checkpoint_id>/delete")
@@ -425,8 +449,9 @@ def add_checkpoint():
 def delete_checkpoint(checkpoint_id: int):
     if not planning.remove_checkpoint(current_user, checkpoint_id):
         abort(404)
-    flash("Checkpoint removed.")
-    return redirect(url_for("core.checkpoints"))
+    if request.form.get("back") != "welcome":
+        flash("Checkpoint removed.")
+    return _back("core.checkpoints", "checkpoints")
 
 
 def _subject_rows(dash, wallet) -> list[dict]:
@@ -557,56 +582,49 @@ def _month_grid(start: date, end: date,
 
 
 @bp.route("/settings", methods=["GET", "POST"])
+@bp.route("/setup", methods=["GET", "POST"])
 @login_required
 def settings():
+    """Everything Bunkk needs to know, on one page.
+
+    It used to be five pages behind a dropdown — limits here, the end date on
+    the calendar, checkpoints on a page of their own — and people found none
+    of them. The small things are edited in place now; the two big editors
+    (the timetable grid, the holiday calendar) are a tap away, with what they
+    currently hold summarised here.
+    """
     settings = settings_for(current_user)
     subjects = subjects_for(current_user)
 
     def page(errors, status=200):
+        today = date.today()
+        entries = planning.timetable_entries(current_user)
         return render_template(
             "settings.html", settings=settings, subjects=subjects,
             errors=errors, subject_limit=subject_limit,
+            has_semester=planning.active_semester(current_user) is not None,
+            semester_end=planning.semester_end(current_user),
+            end_is_guess=planning.semester_end_is_guess(current_user),
+            checkpoints=planning.checkpoints_for(current_user),
+            next_checkpoint=planning.next_checkpoint(current_user, today),
+            classes_a_week=sum(1 for e in entries if e.kind == "class"),
+            timetable_detected=planning.timetable_is_detected(current_user),
+            holidays=[h for h in planning.holidays_for(current_user) if h.on_date >= today],
+            custom_limits=sum(1 for s in subjects if s.custom_limit is not None),
+            today=today,
         ), status
 
     if request.method == "POST":
-        errors = _apply_settings(settings, subjects, request.form)
+        errors = apply_limits(settings, request.form)
         if errors:
             db.session.rollback()
             return page(errors, 400)
+        onboarding.mark_limits_chosen(current_user)
         db.session.commit()
-        flash("Settings saved.")
-        return redirect(url_for("core.settings"))
+        flash("Limits saved.")
+        return redirect(url_for("core.settings") + "#limits")
 
     return page({})
-
-
-def _apply_settings(settings, subjects, form) -> dict[str, str]:
-    errors: dict[str, str] = {}
-
-    def percent(field: str, label: str) -> int | None:
-        raw = (form.get(field) or "").strip()
-        if not raw:
-            return None
-        try:
-            value = int(raw)
-        except ValueError:
-            errors[field] = f"{label} must be a whole number."
-            return None
-        if not 0 <= value <= 100:
-            errors[field] = "Must be between 0 and 100."
-            return None
-        return value
-
-    overall = percent("overall_limit", "Overall limit")
-    subject = percent("subject_limit", "Subject limit")
-    if overall is not None:
-        settings.overall_limit = overall
-    if subject is not None:
-        settings.subject_limit = subject
-
-    # `staleness_days` is no longer a setting anyone turns — it keeps its default
-    # and still drives the "your report is N days old" banners.
-    return errors
 
 
 @bp.route("/subjects", methods=["GET", "POST"])
