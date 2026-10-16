@@ -211,21 +211,22 @@ def build_wallet(rows: list[dict], overall_limit: int) -> Wallet:
     grand_total = tot.total + tot_unreported + tot_remaining
     overall_budget = _budget(tot.present, tot_remaining, tot_planned,
                              grand_total, overall_limit)
+    overall_verdict = _verdict(overall_budget, tot.present, tot_remaining,
+                               tot_planned, grand_total, overall_limit)
 
     # A subject can never be safer than the overall rule allows, and the verdict
     # has to follow the capped budget — otherwise a subject with private slack
-    # would read SAFE while its real budget is zero.
-    subjects = [
-        replace(
-            s,
-            budget=min(s.budget, overall_budget),
-            verdict=_verdict(
-                min(s.budget, overall_budget), s.counts.present, s.remaining,
-                s.planned_absences, s.projected_total, s.limit,
-            ),
-        )
-        for s in subjects
-    ]
+    # would read SAFE while its real budget is zero. Once the overall rule is
+    # broken, even a subject with nothing left to miss isn't safe.
+    def capped(s: SubjectPlan) -> SubjectPlan:
+        budget = min(s.budget, overall_budget)
+        verdict = _verdict(budget, s.counts.present, s.remaining,
+                           s.planned_absences, s.projected_total, s.limit)
+        if verdict is Verdict.SAFE and overall_verdict is Verdict.DANGER:
+            verdict = Verdict.WARN
+        return replace(s, budget=budget, verdict=verdict)
+
+    subjects = [capped(s) for s in subjects]
     subjects.sort(key=lambda s: (s.budget, s.code))
 
     return Wallet(
@@ -236,8 +237,7 @@ def build_wallet(rows: list[dict], overall_limit: int) -> Wallet:
         overall_remaining=tot_remaining,
         overall_planned=tot_planned,
         overall_budget=overall_budget,
-        overall_verdict=_verdict(overall_budget, tot.present, tot_remaining,
-                                 tot_planned, grand_total, overall_limit),
+        overall_verdict=overall_verdict,
     )
 
 
@@ -249,6 +249,11 @@ def _verdict(budget: int, present: int, remaining: int, planned: int,
     best_possible = 100 * (present + remaining - planned)
     if best_possible < limit * total:
         return Verdict.DANGER
+    # Near the end date there may be fewer than WARN_MARGIN lectures left. If
+    # every one of them can be missed, nothing left can sink you: that's safe,
+    # not tight. Also covers a subject with nothing left on the timetable.
+    if budget >= remaining - planned:
+        return Verdict.SAFE
     if budget < WARN_MARGIN:
         return Verdict.WARN
     return Verdict.SAFE

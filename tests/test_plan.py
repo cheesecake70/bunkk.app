@@ -161,6 +161,34 @@ class TestWallet:
         w = build_wallet([subject_row(present=100, absent=0, remaining=2)], 70)
         assert w.subjects[0].budget == 2
 
+    def test_missing_everything_left_is_safe_not_tight(self):
+        """One lecture left before the end date and it can be skipped: nothing
+        left can sink you, so it isn't tight just because the budget is < 2."""
+        w = build_wallet([subject_row(present=10, remaining=1)], 70)
+        assert w.subjects[0].budget == 1
+        assert w.subjects[0].verdict is Verdict.SAFE
+
+    def test_nothing_left_above_the_limit_is_safe(self):
+        """A subject missing from the timetable at 100% is locked in."""
+        w = build_wallet([subject_row(present=10, remaining=0)], 70)
+        assert w.subjects[0].verdict is Verdict.SAFE
+
+    def test_nothing_left_is_not_safe_when_overall_is_broken(self):
+        """Another subject has sunk the overall rule: a finished subject must
+        not read green beside it."""
+        rows = [subject_row(1, "A", present=8, absent=2, remaining=0),
+                subject_row(2, "B", present=2, absent=3, remaining=3)]
+        w = build_wallet(rows, overall_limit=75)
+        assert w.overall_verdict is Verdict.DANGER
+        a = next(s for s in w.subjects if s.code == "A")
+        assert a.verdict is Verdict.WARN
+
+    def test_budget_short_of_what_is_left_is_still_tight(self):
+        """1 spendable of 10 left is the case the warn margin is for."""
+        w = build_wallet([subject_row(present=7, absent=5, remaining=10)], 70)
+        assert w.subjects[0].budget == 1
+        assert w.subjects[0].verdict is Verdict.WARN
+
     def test_unreachable_limit_is_danger(self):
         """5 present, 20 absent, 2 left: even perfect attendance ends at 7/27."""
         w = build_wallet([subject_row(present=5, absent=20, remaining=2)], 70)
